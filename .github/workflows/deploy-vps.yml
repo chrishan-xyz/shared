@@ -84,6 +84,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Clone shared dependencies
+        run: |
+          # Shared libs are referenced via relative paths (../../shared/ or ../shared/)
+          SHARED_DIR="$(cd ../.. && pwd)/shared"
+          if [ ! -d "$SHARED_DIR/.git" ]; then
+            git clone --depth 1 https://github.com/chrishan-xyz/shared.git "$SHARED_DIR"
+          else
+            cd "$SHARED_DIR" && git pull --ff-only origin main 2>/dev/null || true
+          fi
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ inputs.node-version }}
@@ -129,6 +138,17 @@ jobs:
             -e "ssh -i ~/.ssh/id_ed25519" \
             ${{ inputs.source-subdir }} ${{ env.VPS_USER }}@${{ env.VPS_HOST }}:${{ inputs.vps-path }}/
 
+      - name: Sync shared dependencies to VPS
+        run: |
+          # Clone shared repo locally for rsync to VPS
+          SHARED_DIR="/tmp/shared-deps"
+          git clone --depth 1 https://github.com/chrishan-xyz/shared.git "$SHARED_DIR" 2>/dev/null || true
+          # Sync shared to VPS
+          rsync -az --delete \
+            --exclude=.git --exclude=node_modules \
+            -e "ssh -i ~/.ssh/id_ed25519" \
+            "$SHARED_DIR/" ${{ env.VPS_USER }}@${{ env.VPS_HOST }}:~/caddy/shared/
+
       - name: Build and deploy container
         run: |
           IMAGE_NAME="${{ inputs.docker-image-name }}"
@@ -143,6 +163,10 @@ jobs:
           echo "🐳 Building and deploying ${{ inputs.app-name }}..."
           ssh -i ~/.ssh/id_ed25519 ${{ env.VPS_USER }}@${{ env.VPS_HOST }} bash -s <<DEPLOY_SCRIPT
             cd ~/caddy || exit 1
+
+            # Copy shared libs into Docker build context
+            rm -rf ${VPS_DIR##*/}/_shared
+            cp -r ~/caddy/shared ${VPS_DIR##*/}/_shared
 
             # Build image
             docker build --no-cache \
