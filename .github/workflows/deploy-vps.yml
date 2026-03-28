@@ -1,0 +1,232 @@
+# Reusable CI & Deploy workflow for VPS-hosted apps
+# Called by individual app workflows with app-specific parameters.
+#
+# Usage in caller repo:
+#   jobs:
+#     deploy:
+#       uses: chrishan-xyz/shared/.github/workflows/deploy-vps.yml@main
+#       with:
+#         app-name: feed
+#         vps-path: ~/caddy/feed
+#         container-name: feed
+#         test-command: npm test
+#         build-client: true
+#       secrets:
+#         VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+#         ARLOS_API_KEY: ${{ secrets.ARLOS_API_KEY }}
+
+name: Deploy to VPS
+
+on:
+  workflow_call:
+    inputs:
+      app-name:
+        description: 'Application name (used for deploy recording and logs)'
+        required: true
+        type: string
+      vps-path:
+        description: 'Absolute path on VPS where source is synced (e.g. ~/caddy/feed)'
+        required: true
+        type: string
+      container-name:
+        description: 'Docker container/service name in docker-compose'
+        required: true
+        type: string
+      test-command:
+        description: 'Test command to run (e.g. "npm test", "npx vitest run tests/")'
+        default: 'npm test'
+        type: string
+      build-client:
+        description: 'Whether to build a client/ subdirectory'
+        default: true
+        type: boolean
+      node-version:
+        description: 'Node.js version for CI'
+        default: '20'
+        type: string
+      health-endpoint:
+        description: 'Health check path inside the container'
+        default: '/api/health'
+        type: string
+      health-port:
+        description: 'Port the app listens on inside the container'
+        default: '8080'
+        type: string
+      source-subdir:
+        description: 'Subdirectory to sync (default: repo root). For monorepos like chrishan.xyz/home/'
+        default: './'
+        type: string
+      rsync-excludes:
+        description: 'Extra rsync --exclude flags (space-separated)'
+        default: ''
+        type: string
+      docker-image-name:
+        description: 'Local Docker image tag (default: container-name:latest)'
+        default: ''
+        type: string
+      npm-workdir:
+        description: 'Working directory for npm ci/test (default: repo root)'
+        default: '.'
+        type: string
+    secrets:
+      VPS_SSH_KEY:
+        required: true
+      ARLOS_API_KEY:
+        required: false
+
+env:
+  VPS_HOST: 204.168.189.154
+  VPS_USER: chris
+  ARLOS_URL: https://arlo.chrishan.xyz
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+          cache-dependency-path: ${{ inputs.npm-workdir }}/package-lock.json
+      - name: Install dependencies
+        run: cd ${{ inputs.npm-workdir }} && npm ci
+      - name: Run tests
+        run: cd ${{ inputs.npm-workdir }} && ${{ inputs.test-command }}
+      - name: Build client
+        if: inputs.build-client
+        run: cd ${{ inputs.npm-workdir }}/client && npm ci && npm run build
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-${{ inputs.app-name }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          if [ -z "${{ secrets.VPS_SSH_KEY }}" ]; then
+            echo "❌ VPS_SSH_KEY secret not configured"
+            echo "Add it at: Settings > Secrets > Actions"
+            exit 1
+          fi
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ env.VPS_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Sync source to VPS
+        run: |
+          echo "📦 Syncing ${{ inputs.app-name }} to VPS..."
+          rsync -az --delete \
+            --exclude=node_modules --exclude=.git --exclude=data \
+            --exclude='*.db' --exclude='*.db-*' \
+            ${{ inputs.rsync-excludes }} \
+            -e "ssh -i ~/.ssh/id_ed25519" \
+            ${{ inputs.source-subdir }} ${{ env.VPS_USER }}@${{ env.VPS_HOST }}:${{ inputs.vps-path }}/
+
+      - name: Build and deploy container
+        run: |
+          IMAGE_NAME="${{ inputs.docker-image-name }}"
+          if [ -z "$IMAGE_NAME" ]; then
+            IMAGE_NAME="${{ inputs.container-name }}:latest"
+          fi
+          CONTAINER="${{ inputs.container-name }}"
+          VPS_DIR="${{ inputs.vps-path }}"
+          HEALTH_PORT="${{ inputs.health-port }}"
+          HEALTH_PATH="${{ inputs.health-endpoint }}"
+
+          echo "🐳 Building and deploying ${{ inputs.app-name }}..."
+          ssh -i ~/.ssh/id_ed25519 ${{ env.VPS_USER }}@${{ env.VPS_HOST }} bash -s <<DEPLOY_SCRIPT
+            cd ~/caddy || exit 1
+
+            # Build image
+            docker build --no-cache \
+              --build-arg COMMIT_SHA=${{ github.sha }} \
+              -t ${IMAGE_NAME} ${VPS_DIR##*/}/ || { echo "❌ Docker build failed"; exit 1; }
+
+            # Restart container via compose
+            docker compose up -d ${CONTAINER} || { echo "❌ Docker compose up failed"; exit 1; }
+
+            # Health check
+            echo "⏳ Waiting for health check..."
+            for i in \$(seq 1 12); do
+              sleep 5
+              STATUS=\$(docker exec ${CONTAINER} wget -q -O- http://localhost:${HEALTH_PORT}${HEALTH_PATH} 2>/dev/null | grep -c '"status"' || echo "0")
+              if [ "\$STATUS" -ge "1" ]; then
+                echo "✅ ${{ inputs.app-name }} deployed and healthy"
+                exit 0
+              fi
+              echo "  Attempt \$i/12: waiting..."
+            done
+
+            echo "⚠️ Health check failed after 60s"
+            docker logs ${CONTAINER} --tail 20
+            exit 1
+          DEPLOY_SCRIPT
+
+      - name: Cleanup merged branches
+        if: success()
+        continue-on-error: true
+        run: |
+          echo "🧹 Cleaning merged remote branches..."
+          git fetch --prune origin
+          BRANCHES=$(git branch -r --merged origin/main | grep -v 'origin/main' | grep -v 'origin/HEAD' | sed 's|origin/||' || true)
+          if [ -z "$BRANCHES" ]; then
+            echo "✅ No merged branches to clean"
+          else
+            echo "$BRANCHES" | while read branch; do
+              echo "  Deleting: $branch"
+              git push origin --delete "$branch" 2>/dev/null || true
+            done
+            echo "✅ Branch cleanup complete"
+          fi
+
+      - name: Prune Docker images
+        if: success()
+        continue-on-error: true
+        run: |
+          ssh -i ~/.ssh/id_ed25519 ${{ env.VPS_USER }}@${{ env.VPS_HOST }} bash -s <<'PRUNE'
+            echo "🧹 Pruning old Docker images..."
+            docker image prune -a -f --filter 'until=24h' 2>/dev/null || true
+            docker builder prune -f --filter 'until=48h' 2>/dev/null || true
+            echo "📊 Disk usage:"
+            df -h / || true
+          PRUNE
+
+      - name: Record deployment
+        if: always()
+        continue-on-error: true
+        run: |
+          COMMIT_MSG=$(printf '%s' "${{ github.event.head_commit.message }}" | head -1 | cut -c1-200)
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          DEPLOY_STATUS="success"
+          if [ "${{ job.status }}" = "failure" ] || [ "${{ job.status }}" = "cancelled" ]; then
+            DEPLOY_STATUS="failed"
+          fi
+
+          ARLOS_KEY="${{ secrets.ARLOS_API_KEY }}"
+          if [ -n "$ARLOS_KEY" ]; then
+            JSON=$(jq -n \
+              --arg app "${{ inputs.app-name }}" \
+              --arg hash "${{ github.sha }}" \
+              --arg short "$(echo '${{ github.sha }}' | cut -c1-7)" \
+              --arg msg "$COMMIT_MSG" \
+              --arg branch "main" \
+              --arg status "$DEPLOY_STATUS" \
+              --arg actor "${{ github.actor }}" \
+              --arg url "$RUN_URL" \
+              '{app:$app, commit_hash:$hash, commit_short:$short, commit_message:$msg, branch:$branch, status:$status, actor:$actor, run_url:$url}')
+
+            curl -sf -X POST "${{ env.ARLOS_URL }}/api/deploys" \
+              -H "Content-Type: application/json" \
+              -H "x-arlo-api-key: $ARLOS_KEY" \
+              -d "$JSON" || echo "⚠️ Failed to record deployment (non-fatal)"
+          else
+            echo "ℹ️ ARLOS_API_KEY not set — skipping deploy recording"
+          fi
