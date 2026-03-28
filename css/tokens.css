@@ -75,3 +75,40 @@
 
   color-scheme: dark;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Light Theme (Warm) — used by Recharge
+   Cream/terracotta palette. Same variable names, different values.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root[data-theme="light"] {
+  /* ── Backgrounds ── */
+  --bg-base: #FDF6EC;
+  --bg-surface: #F7F0E4;
+  --bg-elevated: #FFFFFF;
+  --bg-hover: #F0E8D8;
+
+  /* ── Text ── */
+  --text-primary: #2C2C2C;
+  --text-secondary: #6B6B6B;
+  --text-tertiary: #9A9A9A;
+
+  /* ── Semantic Colors (warm-friendly) ── */
+  --green: #2D8A4E;
+  --green-soft: rgba(45, 138, 78, 0.10);
+  --yellow: #D4920A;
+  --yellow-soft: rgba(212, 146, 10, 0.10);
+  --red: #C45D3E;
+  --red-soft: rgba(196, 93, 62, 0.10);
+  --orange: #D4A574;
+
+  /* ── Borders & Dividers ── */
+  --divider: #E8E0D0;
+
+  /* ── Default accent (override per app) ── */
+  --accent: #C45D3E;
+  --accent-soft: rgba(196, 93, 62, 0.10);
+  --text-on-accent: #FFFFFF;
+
+  color-scheme: light;
+}

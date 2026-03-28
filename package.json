@@ -1,0 +1,10 @@
+{
+  "name": "@chrishan/shared",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Shared infrastructure modules across all apps",
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "uuid": "^9.0.0"
+  }
+}
