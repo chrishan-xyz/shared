@@ -103,6 +103,13 @@ jobs:
           cache-dependency-path: ${{ inputs.npm-workdir }}/package-lock.json
       - name: Install dependencies
         run: cd ${{ inputs.npm-workdir }} && npm ci
+      - name: Typecheck (server)
+        run: cd ${{ inputs.npm-workdir }} && npx tsc --noEmit
+        continue-on-error: true
+      - name: Typecheck (client)
+        if: inputs.build-client
+        run: cd ${{ inputs.npm-workdir }}/client && npx tsc --noEmit
+        continue-on-error: true
       - name: Run tests
         run: cd ${{ inputs.npm-workdir }} && ${{ inputs.test-command }}
       - name: Build client
