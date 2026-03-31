@@ -37,7 +37,8 @@
     "lib/**/*.js",
     "lib/**/*.ts",
     "middleware/**/*.js",
-    "middleware/**/*.ts"
+    "middleware/**/*.ts",
+    "types/**/*.d.ts"
   ],
   "exclude": [
     "node_modules",
