@@ -1,0 +1,46 @@
+{
+  "compilerOptions": {
+    /* Language & Module */
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "allowJs": true,
+    "checkJs": false,
+
+    /* Strict Type-Checking */
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "strictFunctionTypes": true,
+    "strictBindCallApply": true,
+    "strictPropertyInitialization": true,
+    "noImplicitThis": true,
+    "alwaysStrict": true,
+
+    /* Additional Checks */
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true,
+
+    /* Emit */
+    "noEmit": true,
+    "skipLibCheck": true,
+
+    /* Type Roots */
+    "types": ["node"]
+  },
+  "include": [
+    "lib/**/*.js",
+    "lib/**/*.ts",
+    "middleware/**/*.js",
+    "middleware/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "css"
+  ]
+}
