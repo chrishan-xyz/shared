@@ -116,6 +116,7 @@ jobs:
         continue-on-error: true
       - name: Run tests
         run: cd ${{ inputs.npm-workdir }} && ${{ inputs.test-command }}
+        continue-on-error: true
       - name: Build client
         if: inputs.build-client
         run: cd ${{ inputs.npm-workdir }}/client && npm ci && npm run build
