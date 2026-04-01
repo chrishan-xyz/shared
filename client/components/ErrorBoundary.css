@@ -1,0 +1,115 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Shared Components CSS — ErrorFallback + Skeleton
+   Uses CSS custom properties from theme files. No hard-coded colors.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── ErrorFallback ─────────────────────────────────────────────────── */
+
+.ef-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  padding: 32px 24px;
+  text-align: center;
+  background: var(--bg-base, #1a1a1a);
+}
+
+.ef-icon-wrap {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(239, 68, 68, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+
+.ef-icon-wrap .ef-icon {
+  color: var(--red, #ef4444);
+}
+
+.ef-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary, #e5e5e5);
+  margin-bottom: 8px;
+  font-family: var(--font-system, system-ui, -apple-system, sans-serif);
+}
+
+.ef-stack {
+  font-size: 12px;
+  color: var(--text-tertiary, #999);
+  background: var(--bg-surface, #252525);
+  border: 1px solid var(--divider, #333);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-top: 8px;
+  font-family: var(--font-mono, monospace);
+  max-width: 100%;
+  overflow: auto;
+  text-align: left;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.ef-status {
+  font-size: 13px;
+  color: var(--text-secondary, #aaa);
+  margin-top: 12px;
+}
+
+.ef-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.ef-btn-retry {
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  background: var(--accent, #FFBF00);
+  color: var(--text-on-accent, var(--accent-text, #000));
+  font-family: var(--font-system, system-ui, -apple-system, sans-serif);
+  transition: opacity 0.15s ease;
+}
+
+.ef-btn-retry:hover {
+  opacity: 0.85;
+}
+
+.ef-btn-reload {
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  border-radius: 8px;
+  border: 1px solid var(--divider, #333);
+  cursor: pointer;
+  background: var(--bg-surface, #252525);
+  color: var(--text-secondary, #aaa);
+  font-family: var(--font-system, system-ui, -apple-system, sans-serif);
+  transition: all 0.15s ease;
+}
+
+.ef-btn-reload:hover {
+  background: var(--bg-hover, #333);
+}
+
+/* ── Skeleton ──────────────────────────────────────────────────────── */
+
+.skeleton {
+  background: var(--bg-surface, #252525);
+  border-radius: 6px;
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
