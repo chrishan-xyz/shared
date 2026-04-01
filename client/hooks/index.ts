@@ -15,7 +15,10 @@ export type { UsePullToRefreshReturn } from './usePullToRefresh';
 export { useOnlineStatus } from './useOnlineStatus';
 export type { UseOnlineStatusReturn } from './useOnlineStatus';
 
-// Uncomment as hooks are extracted in subsequent phases.
-// export { useAuth } from './useAuth';
-// export { useMediaQuery } from './useMediaQuery';
-// export { useTheme } from './useTheme';
+export { useAuth } from './useAuth';
+export type { UseAuthOptions, UseAuthResult } from './useAuth';
+
+export { default as useMediaQuery } from './useMediaQuery';
+
+export { useTheme } from './useTheme';
+export type { UseThemeOptions, UseThemeResult } from './useTheme';
