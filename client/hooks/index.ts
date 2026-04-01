@@ -4,17 +4,18 @@
  * Shared React hooks across all apps.
  *
  * Usage:
- *   import { useAuth, useMediaQuery } from '../../shared/client/hooks';
+ *   import { usePullToRefresh, useOnlineStatus } from '../../shared/client/hooks';
  */
 
 // ── Shared Hooks ────────────────────────────────────────────────────────────
-// Uncomment as hooks are extracted in subsequent phases.
 
-// export { usePullToRefresh } from './usePullToRefresh';
+export { default as usePullToRefresh } from './usePullToRefresh';
+export type { UsePullToRefreshReturn } from './usePullToRefresh';
+
+export { useOnlineStatus } from './useOnlineStatus';
+export type { UseOnlineStatusReturn } from './useOnlineStatus';
+
+// Uncomment as hooks are extracted in subsequent phases.
 // export { useAuth } from './useAuth';
 // export { useMediaQuery } from './useMediaQuery';
 // export { useTheme } from './useTheme';
-// export { useOnlineStatus } from './useOnlineStatus';
-
-// Placeholder export to keep the module valid until hooks are extracted
-export {};
