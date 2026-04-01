@@ -29,8 +29,12 @@ import './ErrorBoundary.css';
 import './PullToRefresh.css';
 import './LoginScreen.css';
 
-// ── Tier 1 (pending extraction) ─────────────────────────────────────────────
-// export { CollapsibleSection } from './CollapsibleSection';
+// ── Tier 1: CollapsibleSection ──────────────────────────────────────────────
+
+export { default as CollapsibleSection } from './CollapsibleSection';
+export type { CollapsibleSectionProps } from './CollapsibleSection';
+
+import './CollapsibleSection.css';
 
 // ── Tier 2: Promoted Primitives ─────────────────────────────────────────────
 // Promoted from Recharge — generic enough to share.
@@ -60,6 +64,10 @@ import './StatusBadge.css';
 // ── Tier 3: Power Components ────────────────────────────────────────────────
 // From ArlOS — valuable across apps.
 
-// export { FormControls, Toggle, Section, Row, NumInput, TextArea } from './FormControls';
+export { Toggle, Section, Row, NumInput, TextArea } from './FormControls';
+export type { ToggleProps, SectionProps, RowProps, NumInputProps, TextAreaProps } from './FormControls';
+
+import './FormControls.css';
+
 // export { InlineSearch } from './InlineSearch';
 // export { SectionHeader } from './SectionHeader';
