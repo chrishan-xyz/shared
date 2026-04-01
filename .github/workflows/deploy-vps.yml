@@ -90,11 +90,15 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: chrishan-xyz/shared
-          path: ../shared
+          path: _shared
           token: ${{ secrets.CROSS_REPO_TOKEN || github.token }}
-      - name: Install shared dependencies
+      - name: Setup shared directory
         run: |
+          # Apps reference shared via ../../shared/ from lib/ subdirs
+          # We need shared at ../shared/ relative to the checkout root
           SHARED_DIR="$(cd .. && pwd)/shared"
+          rm -rf "$SHARED_DIR"
+          cp -r _shared "$SHARED_DIR"
           cd "$SHARED_DIR" && npm install --omit=dev 2>/dev/null || true
       - uses: actions/setup-node@v4
         with:
@@ -152,7 +156,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: chrishan-xyz/shared
-          path: /tmp/shared-deps
+          path: _shared
           token: ${{ secrets.CROSS_REPO_TOKEN || github.token }}
 
       - name: Sync shared dependencies to VPS
@@ -161,7 +165,7 @@ jobs:
           rsync -az --delete \
             --exclude=.git --exclude=node_modules \
             -e "ssh -i ~/.ssh/id_ed25519" \
-            "/tmp/shared-deps/" ${{ env.VPS_USER }}@${{ env.VPS_HOST }}:~/caddy/shared/
+            "_shared/" ${{ env.VPS_USER }}@${{ env.VPS_HOST }}:~/caddy/shared/
 
       - name: Build and deploy container
         run: |
