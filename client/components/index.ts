@@ -69,5 +69,9 @@ export type { ToggleProps, SectionProps, RowProps, NumInputProps, TextAreaProps 
 
 import './FormControls.css';
 
-// export { InlineSearch } from './InlineSearch';
+export { default as InlineSearch } from './InlineSearch';
+export type { InlineSearchProps } from './InlineSearch';
+
+import './InlineSearch.css';
+
 // export { SectionHeader } from './SectionHeader';
