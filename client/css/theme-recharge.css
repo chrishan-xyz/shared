@@ -1,0 +1,20 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Recharge Theme — Terracotta on Light (Warm Cream)
+   Import after tokens.css to override accent and theme colors.
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root {
+  --accent: #C45D3E;
+  --accent-hover: #A84D33;
+  --accent-muted: rgba(196, 93, 62, 0.15);
+  --accent-text: #FFFFFF;
+  --theme: light;
+
+  /* Light theme background overrides */
+  --bg-primary: #FAF7F2;
+  --bg-secondary: #F5F0E8;
+  --bg-tertiary: #EDE8DD;
+  --text-primary: #2D2A26;
+  --text-secondary: #6B6560;
+  --text-muted: #9C958E;
+  --border-subtle: rgba(45, 42, 38, 0.12);
+}

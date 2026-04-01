@@ -1,0 +1,11 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   chrishan.xyz Theme — Silver on Dark
+   Import after tokens.css to override accent color.
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root {
+  --accent: #E5E5E5;
+  --accent-hover: #CCCCCC;
+  --accent-muted: rgba(229, 229, 229, 0.15);
+  --accent-text: #000000;
+  --theme: dark;
+}

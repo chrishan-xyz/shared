@@ -1,0 +1,11 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   ArlOS Theme — Amber/Gold on Dark
+   Import after tokens.css to override accent color.
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root {
+  --accent: #FFBF00;
+  --accent-hover: #E6AC00;
+  --accent-muted: rgba(255, 191, 0, 0.15);
+  --accent-text: #000000;
+  --theme: dark;
+}
