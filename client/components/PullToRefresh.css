@@ -1,0 +1,43 @@
+/* PullToRefresh.css — BEM .ptr-* */
+/* Uses CSS custom properties only — no app-specific values */
+
+.ptr-container {
+  position: relative;
+  min-height: 100%;
+}
+
+.ptr-indicator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  z-index: 50;
+  pointer-events: none;
+}
+
+.ptr-spinner-wrap {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--bg-surface, #1c1c1e);
+  border: 2px solid var(--border, #333);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+
+.ptr-loading-ring {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--text-dim, #666);
+  border-top-color: var(--accent, #22c55e);
+  border-radius: 50%;
+  animation: ptr-spin 0.6s linear infinite;
+}
+
+@keyframes ptr-spin {
+  to { transform: rotate(360deg); }
+}
