@@ -68,12 +68,30 @@ on:
         description: 'Working directory for npm ci/test (default: repo root)'
         default: '.'
         type: string
+      deploy-strategy:
+        description: "Deploy strategy: 'in-place' (compose restart) or 'blue-green' (GHCR push + swap)"
+        default: 'in-place'
+        type: string
+      tsx-runtime:
+        description: 'Use tsx server.ts as container CMD'
+        default: false
+        type: boolean
+      ghcr-image:
+        description: 'GHCR image name for blue-green (e.g. ghcr.io/christopher-han/arlos)'
+        default: ''
+        type: string
+      smoke-test-routes:
+        description: 'Comma-separated routes to verify after deploy (e.g. /api/health,/api/tasks)'
+        default: ''
+        type: string
     secrets:
       VPS_SSH_KEY:
         required: true
       ARLOS_API_KEY:
         required: false
       CROSS_REPO_TOKEN:
+        required: false
+      GHCR_TOKEN:
         required: false
 
 env:
@@ -172,7 +190,8 @@ jobs:
             -e "ssh -i ~/.ssh/id_ed25519" \
             "/tmp/shared-deps/" ${{ env.VPS_USER }}@${{ env.VPS_HOST }}:~/caddy/shared/
 
-      - name: Build and deploy container
+      - name: Build and deploy container (in-place)
+        if: inputs.deploy-strategy == 'in-place'
         run: |
           IMAGE_NAME="${{ inputs.docker-image-name }}"
           if [ -z "$IMAGE_NAME" ]; then
@@ -183,7 +202,7 @@ jobs:
           HEALTH_PORT="${{ inputs.health-port }}"
           HEALTH_PATH="${{ inputs.health-endpoint }}"
 
-          echo "🐳 Building and deploying ${{ inputs.app-name }}..."
+          echo "🐳 Building and deploying ${{ inputs.app-name }} (in-place)..."
           ssh -i ~/.ssh/id_ed25519 ${{ env.VPS_USER }}@${{ env.VPS_HOST }} bash -s <<DEPLOY_SCRIPT
             cd ~/caddy || exit 1
 
@@ -215,6 +234,41 @@ jobs:
             docker logs ${CONTAINER} --tail 20
             exit 1
           DEPLOY_SCRIPT
+
+      - name: Build and deploy container (blue-green)
+        if: inputs.deploy-strategy == 'blue-green'
+        run: |
+          GHCR_IMAGE="${{ inputs.ghcr-image }}"
+          if [ -z "$GHCR_IMAGE" ]; then
+            echo "❌ ghcr-image input is required for blue-green deploy strategy"
+            exit 1
+          fi
+          IMAGE_TAG="${GHCR_IMAGE}:${{ github.sha }}"
+
+          echo "🐳 Building ${{ inputs.app-name }} for blue-green deploy..."
+
+          # Login to GHCR
+          echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+          # Build image locally in CI runner
+          docker build --no-cache \
+            --build-arg COMMIT_SHA=${{ github.sha }} \
+            -t "${IMAGE_TAG}" \
+            -t "${GHCR_IMAGE}:latest" \
+            ${{ inputs.source-subdir }} || { echo "❌ Docker build failed"; exit 1; }
+
+          # Push to GHCR
+          echo "📦 Pushing ${IMAGE_TAG} to GHCR..."
+          docker push "${IMAGE_TAG}" || { echo "❌ GHCR push failed"; exit 1; }
+          docker push "${GHCR_IMAGE}:latest" || true
+
+          # SSH to VPS and run blue-green deploy script
+          echo "🔄 Running blue-green deploy on VPS..."
+          ssh -i ~/.ssh/id_ed25519 ${{ env.VPS_USER }}@${{ env.VPS_HOST }} bash -s <<BGDEPLOY
+            ~/caddy/arlos/scripts/deploy-blue-green.sh \
+              --image "${IMAGE_TAG}" \
+              --commit "${{ github.sha }}"
+          BGDEPLOY
 
       - name: Cleanup merged branches
         if: success()
