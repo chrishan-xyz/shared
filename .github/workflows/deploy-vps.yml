@@ -91,7 +91,7 @@ jobs:
         with:
           repository: chrishan-xyz/shared
           path: _shared
-          token: ${{ secrets.CROSS_REPO_TOKEN || github.token }}
+          token: ${{ secrets.CROSS_REPO_TOKEN }}
       - name: Setup shared directory
         run: |
           # Apps reference shared via ../../shared/ from lib/ subdirs
@@ -157,7 +157,7 @@ jobs:
         with:
           repository: chrishan-xyz/shared
           path: _shared
-          token: ${{ secrets.CROSS_REPO_TOKEN || github.token }}
+          token: ${{ secrets.CROSS_REPO_TOKEN }}
 
       - name: Sync shared dependencies to VPS
         run: |
