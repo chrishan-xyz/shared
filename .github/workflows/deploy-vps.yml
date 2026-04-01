@@ -73,6 +73,8 @@ on:
         required: true
       ARLOS_API_KEY:
         required: false
+      CROSS_REPO_TOKEN:
+        required: false
 
 env:
   VPS_HOST: 204.168.189.154
@@ -84,17 +86,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Clone shared dependencies
+      - name: Checkout shared dependencies
+        uses: actions/checkout@v4
+        with:
+          repository: chrishan-xyz/shared
+          path: ../shared
+          token: ${{ secrets.CROSS_REPO_TOKEN || github.token }}
+      - name: Install shared dependencies
         run: |
-          # Shared libs are referenced via relative paths (../../shared/ from lib/)
-          # From <checkout>/lib/file.js, ../../shared resolves to <checkout>/../shared/
           SHARED_DIR="$(cd .. && pwd)/shared"
-          if [ ! -d "$SHARED_DIR/.git" ]; then
-            git clone --depth 1 https://github.com/chrishan-xyz/shared.git "$SHARED_DIR"
-          else
-            cd "$SHARED_DIR" && git pull --ff-only origin main 2>/dev/null || true
-          fi
-          # Install shared's own dependencies (bcryptjs, uuid)
           cd "$SHARED_DIR" && npm install --omit=dev 2>/dev/null || true
       - uses: actions/setup-node@v4
         with:
@@ -148,16 +148,20 @@ jobs:
             -e "ssh -i ~/.ssh/id_ed25519" \
             ${{ inputs.source-subdir }} ${{ env.VPS_USER }}@${{ env.VPS_HOST }}:${{ inputs.vps-path }}/
 
+      - name: Checkout shared for deploy
+        uses: actions/checkout@v4
+        with:
+          repository: chrishan-xyz/shared
+          path: /tmp/shared-deps
+          token: ${{ secrets.CROSS_REPO_TOKEN || github.token }}
+
       - name: Sync shared dependencies to VPS
         run: |
-          # Clone shared repo locally for rsync to VPS
-          SHARED_DIR="/tmp/shared-deps"
-          git clone --depth 1 https://github.com/chrishan-xyz/shared.git "$SHARED_DIR" 2>/dev/null || true
           # Sync shared to VPS
           rsync -az --delete \
             --exclude=.git --exclude=node_modules \
             -e "ssh -i ~/.ssh/id_ed25519" \
-            "$SHARED_DIR/" ${{ env.VPS_USER }}@${{ env.VPS_HOST }}:~/caddy/shared/
+            "/tmp/shared-deps/" ${{ env.VPS_USER }}@${{ env.VPS_HOST }}:~/caddy/shared/
 
       - name: Build and deploy container
         run: |
