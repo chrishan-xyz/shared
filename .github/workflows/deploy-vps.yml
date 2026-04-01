@@ -68,6 +68,10 @@ on:
         description: 'Working directory for npm ci/test (default: repo root)'
         default: '.'
         type: string
+      smoke-test-routes:
+        description: 'Comma-separated routes to check during smoke test (e.g. /api/health,/api/tasks). If empty, only health-endpoint is checked.'
+        default: ''
+        type: string
     secrets:
       VPS_SSH_KEY:
         required: true
@@ -172,19 +176,16 @@ jobs:
             -e "ssh -i ~/.ssh/id_ed25519" \
             "/tmp/shared-deps/" ${{ env.VPS_USER }}@${{ env.VPS_HOST }}:~/caddy/shared/
 
-      - name: Build and deploy container
+      - name: Build container image
         run: |
           IMAGE_NAME="${{ inputs.docker-image-name }}"
           if [ -z "$IMAGE_NAME" ]; then
             IMAGE_NAME="${{ inputs.container-name }}:latest"
           fi
-          CONTAINER="${{ inputs.container-name }}"
           VPS_DIR="${{ inputs.vps-path }}"
-          HEALTH_PORT="${{ inputs.health-port }}"
-          HEALTH_PATH="${{ inputs.health-endpoint }}"
 
-          echo "🐳 Building and deploying ${{ inputs.app-name }}..."
-          ssh -i ~/.ssh/id_ed25519 ${{ env.VPS_USER }}@${{ env.VPS_HOST }} bash -s <<DEPLOY_SCRIPT
+          echo "🐳 Building ${{ inputs.app-name }} image..."
+          ssh -i ~/.ssh/id_ed25519 ${{ env.VPS_USER }}@${{ env.VPS_HOST }} bash -s <<BUILD_SCRIPT
             cd ~/caddy || exit 1
 
             # Copy shared libs into Docker build context
@@ -196,10 +197,99 @@ jobs:
               --build-arg COMMIT_SHA=${{ github.sha }} \
               -t ${IMAGE_NAME} ${VPS_DIR##*/}/ || { echo "❌ Docker build failed"; exit 1; }
 
+            echo "✅ Image ${IMAGE_NAME} built successfully"
+          BUILD_SCRIPT
+
+      - name: Smoke test container
+        run: |
+          IMAGE_NAME="${{ inputs.docker-image-name }}"
+          if [ -z "$IMAGE_NAME" ]; then
+            IMAGE_NAME="${{ inputs.container-name }}:latest"
+          fi
+          CONTAINER="smoke-test-${{ inputs.container-name }}"
+          HEALTH_PORT="${{ inputs.health-port }}"
+          HEALTH_PATH="${{ inputs.health-endpoint }}"
+          SMOKE_ROUTES="${{ inputs.smoke-test-routes }}"
+
+          echo "🧪 Running smoke test for ${{ inputs.app-name }}..."
+          ssh -i ~/.ssh/id_ed25519 ${{ env.VPS_USER }}@${{ env.VPS_HOST }} bash -s <<SMOKE_SCRIPT
+            # Cleanup any leftover smoke test container
+            docker rm -f ${CONTAINER} 2>/dev/null || true
+
+            # Boot container in isolation on a random high port
+            docker run -d --name ${CONTAINER} -p 0:${HEALTH_PORT} ${IMAGE_NAME} || {
+              echo "❌ Failed to start smoke test container"
+              exit 1
+            }
+
+            # Discover the assigned host port
+            HOST_PORT=\$(docker port ${CONTAINER} ${HEALTH_PORT} | head -1 | cut -d: -f2)
+            if [ -z "\$HOST_PORT" ]; then
+              echo "❌ Could not determine mapped port"
+              docker logs ${CONTAINER} --tail 20
+              docker rm -f ${CONTAINER} 2>/dev/null || true
+              exit 1
+            fi
+            echo "  Container running on host port \$HOST_PORT"
+
+            # Wait up to 30s for health endpoint
+            echo "⏳ Checking health endpoint ${HEALTH_PATH}..."
+            HEALTHY=0
+            for i in \$(seq 1 6); do
+              sleep 5
+              HTTP_CODE=\$(curl -s -o /dev/null -w '%{http_code}' http://localhost:\${HOST_PORT}${HEALTH_PATH} 2>/dev/null || echo "000")
+              if [ "\$HTTP_CODE" = "200" ]; then
+                HEALTHY=1
+                echo "  ✅ Health endpoint returned 200"
+                break
+              fi
+              echo "  Attempt \$i/6: got HTTP \$HTTP_CODE, waiting..."
+            done
+
+            if [ "\$HEALTHY" -ne 1 ]; then
+              echo "❌ Health check failed after 30s"
+              docker logs ${CONTAINER} --tail 30
+              docker rm -f ${CONTAINER} 2>/dev/null || true
+              exit 1
+            fi
+
+            # Check additional smoke test routes if provided
+            if [ -n "${SMOKE_ROUTES}" ]; then
+              echo "🔍 Checking additional routes: ${SMOKE_ROUTES}"
+              IFS=',' read -ra ROUTES <<< "${SMOKE_ROUTES}"
+              for ROUTE in "\${ROUTES[@]}"; do
+                ROUTE=\$(echo "\$ROUTE" | xargs)  # trim whitespace
+                HTTP_CODE=\$(curl -s -o /dev/null -w '%{http_code}' http://localhost:\${HOST_PORT}\${ROUTE} 2>/dev/null || echo "000")
+                if [ "\$HTTP_CODE" = "200" ]; then
+                  echo "  ✅ \${ROUTE} → 200"
+                else
+                  echo "  ❌ \${ROUTE} → HTTP \$HTTP_CODE"
+                  docker logs ${CONTAINER} --tail 30
+                  docker rm -f ${CONTAINER} 2>/dev/null || true
+                  exit 1
+                fi
+              done
+            fi
+
+            # Cleanup smoke test container
+            docker rm -f ${CONTAINER} 2>/dev/null || true
+            echo "✅ Smoke test passed for ${{ inputs.app-name }}"
+          SMOKE_SCRIPT
+
+      - name: Deploy container
+        run: |
+          CONTAINER="${{ inputs.container-name }}"
+          HEALTH_PORT="${{ inputs.health-port }}"
+          HEALTH_PATH="${{ inputs.health-endpoint }}"
+
+          echo "🚀 Deploying ${{ inputs.app-name }}..."
+          ssh -i ~/.ssh/id_ed25519 ${{ env.VPS_USER }}@${{ env.VPS_HOST }} bash -s <<DEPLOY_SCRIPT
+            cd ~/caddy || exit 1
+
             # Restart container via compose
             docker compose up -d ${CONTAINER} || { echo "❌ Docker compose up failed"; exit 1; }
 
-            # Health check
+            # Post-deploy health check
             echo "⏳ Waiting for health check..."
             for i in \$(seq 1 12); do
               sleep 5
