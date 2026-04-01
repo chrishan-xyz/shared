@@ -81,7 +81,7 @@ on:
         default: ''
         type: string
       smoke-test-routes:
-        description: 'Comma-separated routes to verify after deploy (e.g. /api/health,/api/tasks)'
+        description: 'Comma-separated routes to check during smoke test (e.g. /api/health,/api/tasks). If empty, only health-endpoint is checked.'
         default: ''
         type: string
     secrets:
@@ -190,20 +190,55 @@ jobs:
             -e "ssh -i ~/.ssh/id_ed25519" \
             "/tmp/shared-deps/" ${{ env.VPS_USER }}@${{ env.VPS_HOST }}:~/caddy/shared/
 
-      - name: Build and deploy container (in-place)
+      # ──── ROLLBACK PREPARATION ────
+
+      - name: Save rollback state (in-place)
+        id: rollback-state
         if: inputs.deploy-strategy == 'in-place'
+        continue-on-error: true
         run: |
           IMAGE_NAME="${{ inputs.docker-image-name }}"
           if [ -z "$IMAGE_NAME" ]; then
             IMAGE_NAME="${{ inputs.container-name }}:latest"
           fi
           CONTAINER="${{ inputs.container-name }}"
-          VPS_DIR="${{ inputs.vps-path }}"
-          HEALTH_PORT="${{ inputs.health-port }}"
-          HEALTH_PATH="${{ inputs.health-endpoint }}"
 
-          echo "🐳 Building and deploying ${{ inputs.app-name }} (in-place)..."
-          ssh -i ~/.ssh/id_ed25519 ${{ env.VPS_USER }}@${{ env.VPS_HOST }} bash -s <<DEPLOY_SCRIPT
+          echo "🔖 Tagging current image for rollback..."
+          ssh -i ~/.ssh/id_ed25519 ${{ env.VPS_USER }}@${{ env.VPS_HOST }} bash -s <<ROLLBACK_PREP
+            CURRENT_IMAGE=\$(docker inspect --format='{{.Image}}' ${CONTAINER} 2>/dev/null || echo "")
+            if [ -n "\$CURRENT_IMAGE" ]; then
+              docker tag "\$CURRENT_IMAGE" "${IMAGE_NAME%:*}:rollback"
+              echo "rollback_image=${IMAGE_NAME%:*}:rollback" >> /tmp/rollback-info
+              echo "✅ Tagged current image as ${IMAGE_NAME%:*}:rollback"
+            else
+              echo "⚠️ No running container found — first deploy, skip rollback tag"
+            fi
+          ROLLBACK_PREP
+
+      - name: Save rollback state (blue-green)
+        id: rollback-state-bg
+        if: inputs.deploy-strategy == 'blue-green'
+        continue-on-error: true
+        run: |
+          echo "🔖 Recording active color for rollback..."
+          ACTIVE_COLOR=$(ssh -i ~/.ssh/id_ed25519 ${{ env.VPS_USER }}@${{ env.VPS_HOST }} \
+            'cat ~/caddy/arlos/active-color 2>/dev/null || echo "unknown"')
+          echo "active_color=${ACTIVE_COLOR}" >> "$GITHUB_OUTPUT"
+          echo "✅ Active color before deploy: ${ACTIVE_COLOR}"
+
+      # ──── BUILD (in-place) ────
+
+      - name: Build container image (in-place)
+        if: inputs.deploy-strategy == 'in-place'
+        run: |
+          IMAGE_NAME="${{ inputs.docker-image-name }}"
+          if [ -z "$IMAGE_NAME" ]; then
+            IMAGE_NAME="${{ inputs.container-name }}:latest"
+          fi
+          VPS_DIR="${{ inputs.vps-path }}"
+
+          echo "🐳 Building ${{ inputs.app-name }} image..."
+          ssh -i ~/.ssh/id_ed25519 ${{ env.VPS_USER }}@${{ env.VPS_HOST }} bash -s <<BUILD_SCRIPT
             cd ~/caddy || exit 1
 
             # Copy shared libs into Docker build context
@@ -215,10 +250,106 @@ jobs:
               --build-arg COMMIT_SHA=${{ github.sha }} \
               -t ${IMAGE_NAME} ${VPS_DIR##*/}/ || { echo "❌ Docker build failed"; exit 1; }
 
+            echo "✅ Image ${IMAGE_NAME} built successfully"
+          BUILD_SCRIPT
+
+      # ──── SMOKE TEST (in-place) ────
+
+      - name: Smoke test container (in-place)
+        if: inputs.deploy-strategy == 'in-place'
+        run: |
+          IMAGE_NAME="${{ inputs.docker-image-name }}"
+          if [ -z "$IMAGE_NAME" ]; then
+            IMAGE_NAME="${{ inputs.container-name }}:latest"
+          fi
+          CONTAINER="smoke-test-${{ inputs.container-name }}"
+          HEALTH_PORT="${{ inputs.health-port }}"
+          HEALTH_PATH="${{ inputs.health-endpoint }}"
+          SMOKE_ROUTES="${{ inputs.smoke-test-routes }}"
+
+          echo "🧪 Running smoke test for ${{ inputs.app-name }}..."
+          ssh -i ~/.ssh/id_ed25519 ${{ env.VPS_USER }}@${{ env.VPS_HOST }} bash -s <<SMOKE_SCRIPT
+            # Cleanup any leftover smoke test container
+            docker rm -f ${CONTAINER} 2>/dev/null || true
+
+            # Boot container in isolation on a random high port
+            docker run -d --name ${CONTAINER} -p 0:${HEALTH_PORT} ${IMAGE_NAME} || {
+              echo "❌ Failed to start smoke test container"
+              exit 1
+            }
+
+            # Discover the assigned host port
+            HOST_PORT=\$(docker port ${CONTAINER} ${HEALTH_PORT} | head -1 | cut -d: -f2)
+            if [ -z "\$HOST_PORT" ]; then
+              echo "❌ Could not determine mapped port"
+              docker logs ${CONTAINER} --tail 20
+              docker rm -f ${CONTAINER} 2>/dev/null || true
+              exit 1
+            fi
+            echo "  Container running on host port \$HOST_PORT"
+
+            # Wait up to 30s for health endpoint
+            echo "⏳ Checking health endpoint ${HEALTH_PATH}..."
+            HEALTHY=0
+            for i in \$(seq 1 6); do
+              sleep 5
+              HTTP_CODE=\$(curl -s -o /dev/null -w '%{http_code}' http://localhost:\${HOST_PORT}${HEALTH_PATH} 2>/dev/null || echo "000")
+              if [ "\$HTTP_CODE" = "200" ]; then
+                HEALTHY=1
+                echo "  ✅ Health endpoint returned 200"
+                break
+              fi
+              echo "  Attempt \$i/6: got HTTP \$HTTP_CODE, waiting..."
+            done
+
+            if [ "\$HEALTHY" -ne 1 ]; then
+              echo "❌ Health check failed after 30s"
+              docker logs ${CONTAINER} --tail 30
+              docker rm -f ${CONTAINER} 2>/dev/null || true
+              exit 1
+            fi
+
+            # Check additional smoke test routes if provided
+            if [ -n "${SMOKE_ROUTES}" ]; then
+              echo "🔍 Checking additional routes: ${SMOKE_ROUTES}"
+              IFS=',' read -ra ROUTES <<< "${SMOKE_ROUTES}"
+              for ROUTE in "\${ROUTES[@]}"; do
+                ROUTE=\$(echo "\$ROUTE" | xargs)  # trim whitespace
+                HTTP_CODE=\$(curl -s -o /dev/null -w '%{http_code}' http://localhost:\${HOST_PORT}\${ROUTE} 2>/dev/null || echo "000")
+                if [ "\$HTTP_CODE" = "200" ]; then
+                  echo "  ✅ \${ROUTE} → 200"
+                else
+                  echo "  ❌ \${ROUTE} → HTTP \$HTTP_CODE"
+                  docker logs ${CONTAINER} --tail 30
+                  docker rm -f ${CONTAINER} 2>/dev/null || true
+                  exit 1
+                fi
+              done
+            fi
+
+            # Cleanup smoke test container
+            docker rm -f ${CONTAINER} 2>/dev/null || true
+            echo "✅ Smoke test passed for ${{ inputs.app-name }}"
+          SMOKE_SCRIPT
+
+      # ──── DEPLOY (in-place) ────
+
+      - name: Deploy container (in-place)
+        id: deploy-inplace
+        if: inputs.deploy-strategy == 'in-place'
+        run: |
+          CONTAINER="${{ inputs.container-name }}"
+          HEALTH_PORT="${{ inputs.health-port }}"
+          HEALTH_PATH="${{ inputs.health-endpoint }}"
+
+          echo "🚀 Deploying ${{ inputs.app-name }} (in-place)..."
+          ssh -i ~/.ssh/id_ed25519 ${{ env.VPS_USER }}@${{ env.VPS_HOST }} bash -s <<DEPLOY_SCRIPT
+            cd ~/caddy || exit 1
+
             # Restart container via compose
             docker compose up -d ${CONTAINER} || { echo "❌ Docker compose up failed"; exit 1; }
 
-            # Health check
+            # Post-deploy health check
             echo "⏳ Waiting for health check..."
             for i in \$(seq 1 12); do
               sleep 5
@@ -235,7 +366,10 @@ jobs:
             exit 1
           DEPLOY_SCRIPT
 
+      # ──── BUILD + DEPLOY (blue-green) ────
+
       - name: Build and deploy container (blue-green)
+        id: deploy-bg
         if: inputs.deploy-strategy == 'blue-green'
         run: |
           GHCR_IMAGE="${{ inputs.ghcr-image }}"
@@ -270,6 +404,166 @@ jobs:
               --commit "${{ github.sha }}"
           BGDEPLOY
 
+      # ──── POST-DEPLOY HEALTH CHECK ────
+
+      - name: Post-deploy health check
+        id: health-check
+        continue-on-error: true
+        run: |
+          CONTAINER="${{ inputs.container-name }}"
+          HEALTH_PORT="${{ inputs.health-port }}"
+          HEALTH_PATH="${{ inputs.health-endpoint }}"
+          STRATEGY="${{ inputs.deploy-strategy }}"
+
+          echo "🏥 Running post-deploy health check for ${{ inputs.app-name }}..."
+          ssh -i ~/.ssh/id_ed25519 ${{ env.VPS_USER }}@${{ env.VPS_HOST }} bash -s <<HEALTHCHECK
+            HEALTHY=0
+
+            if [ "${STRATEGY}" = "blue-green" ]; then
+              # For blue-green, check via the active container
+              ACTIVE_COLOR=\$(cat ~/caddy/arlos/active-color 2>/dev/null || echo "blue")
+              ACTIVE_CONTAINER="${CONTAINER}-\${ACTIVE_COLOR}"
+              echo "  Checking active container: \${ACTIVE_CONTAINER}"
+            else
+              ACTIVE_CONTAINER="${CONTAINER}"
+            fi
+
+            for i in \$(seq 1 6); do
+              sleep 5
+              STATUS=\$(docker exec \${ACTIVE_CONTAINER} wget -q -O- http://localhost:${HEALTH_PORT}${HEALTH_PATH} 2>/dev/null | grep -c '"status"' || echo "0")
+              if [ "\$STATUS" -ge "1" ]; then
+                echo "✅ Post-deploy health check passed"
+                HEALTHY=1
+                break
+              fi
+              echo "  Health check attempt \$i/6: waiting..."
+            done
+
+            if [ "\$HEALTHY" -ne 1 ]; then
+              echo "❌ Post-deploy health check FAILED"
+              docker logs \${ACTIVE_CONTAINER} --tail 30
+              exit 1
+            fi
+          HEALTHCHECK
+
+      # ──── ROLLBACK ON FAILURE ────
+
+      - name: Rollback (in-place)
+        if: steps.health-check.outcome == 'failure' && inputs.deploy-strategy == 'in-place'
+        run: |
+          IMAGE_NAME="${{ inputs.docker-image-name }}"
+          if [ -z "$IMAGE_NAME" ]; then
+            IMAGE_NAME="${{ inputs.container-name }}:latest"
+          fi
+          CONTAINER="${{ inputs.container-name }}"
+          ROLLBACK_TAG="${IMAGE_NAME%:*}:rollback"
+          HEALTH_PORT="${{ inputs.health-port }}"
+          HEALTH_PATH="${{ inputs.health-endpoint }}"
+
+          echo "🔄 ROLLING BACK ${{ inputs.app-name }} to previous image..."
+          ssh -i ~/.ssh/id_ed25519 ${{ env.VPS_USER }}@${{ env.VPS_HOST }} bash -s <<ROLLBACK
+            cd ~/caddy || exit 1
+
+            # Check if rollback image exists
+            if ! docker image inspect ${ROLLBACK_TAG} >/dev/null 2>&1; then
+              echo "❌ No rollback image found (${ROLLBACK_TAG}) — cannot rollback"
+              echo "  This may be a first deploy with no previous image"
+              exit 1
+            fi
+
+            # Re-tag rollback image as latest so compose picks it up
+            docker tag ${ROLLBACK_TAG} ${IMAGE_NAME}
+            echo "  Tagged ${ROLLBACK_TAG} → ${IMAGE_NAME}"
+
+            # Force recreate with the rolled-back image
+            docker compose up -d ${CONTAINER} --force-recreate || {
+              echo "❌ Rollback compose up failed"
+              exit 1
+            }
+
+            # Verify rollback health
+            echo "⏳ Verifying rollback health..."
+            for i in \$(seq 1 12); do
+              sleep 5
+              STATUS=\$(docker exec ${CONTAINER} wget -q -O- http://localhost:${HEALTH_PORT}${HEALTH_PATH} 2>/dev/null | grep -c '"status"' || echo "0")
+              if [ "\$STATUS" -ge "1" ]; then
+                echo "✅ Rollback successful — ${{ inputs.app-name }} restored to previous version"
+                exit 0
+              fi
+              echo "  Rollback health attempt \$i/12: waiting..."
+            done
+
+            echo "❌ Rollback also failed health check — manual intervention required"
+            docker logs ${CONTAINER} --tail 30
+            exit 1
+          ROLLBACK
+
+      - name: Rollback (blue-green)
+        if: steps.health-check.outcome == 'failure' && inputs.deploy-strategy == 'blue-green'
+        run: |
+          PREV_COLOR="${{ steps.rollback-state-bg.outputs.active_color }}"
+          CONTAINER="${{ inputs.container-name }}"
+          HEALTH_PORT="${{ inputs.health-port }}"
+          HEALTH_PATH="${{ inputs.health-endpoint }}"
+
+          if [ "$PREV_COLOR" = "unknown" ] || [ -z "$PREV_COLOR" ]; then
+            echo "❌ Cannot rollback — previous active color unknown"
+            exit 1
+          fi
+
+          echo "🔄 ROLLING BACK ${{ inputs.app-name }} to previous color: ${PREV_COLOR}..."
+          ssh -i ~/.ssh/id_ed25519 ${{ env.VPS_USER }}@${{ env.VPS_HOST }} bash -s <<BGROLLBACK
+            cd ~/caddy || exit 1
+
+            # Swap back to previous color
+            PREV_CONTAINER="${CONTAINER}-${PREV_COLOR}"
+
+            # Restart previous color container
+            docker compose up -d \${PREV_CONTAINER} || {
+              echo "❌ Failed to restart previous color container"
+              exit 1
+            }
+
+            # Update active color marker
+            echo "${PREV_COLOR}" > ~/caddy/arlos/active-color
+
+            # Update Caddy upstream to point back to previous color
+            # The deploy-blue-green.sh script manages Caddy config; we reverse it
+            if [ "${PREV_COLOR}" = "blue" ]; then
+              NEW_COLOR="green"
+            else
+              NEW_COLOR="blue"
+            fi
+
+            # Stop the failed new color container
+            docker compose stop ${CONTAINER}-\${NEW_COLOR} 2>/dev/null || true
+
+            # Verify rollback health
+            echo "⏳ Verifying rollback health on \${PREV_CONTAINER}..."
+            for i in \$(seq 1 6); do
+              sleep 5
+              STATUS=\$(docker exec \${PREV_CONTAINER} wget -q -O- http://localhost:${HEALTH_PORT}${HEALTH_PATH} 2>/dev/null | grep -c '"status"' || echo "0")
+              if [ "\$STATUS" -ge "1" ]; then
+                echo "✅ Rollback successful — ${{ inputs.app-name }} restored to ${PREV_COLOR}"
+                exit 0
+              fi
+              echo "  Rollback health attempt \$i/6: waiting..."
+            done
+
+            echo "❌ Rollback also failed — manual intervention required"
+            docker logs \${PREV_CONTAINER} --tail 30
+            exit 1
+          BGROLLBACK
+
+      - name: Fail workflow if rollback was triggered
+        if: steps.health-check.outcome == 'failure'
+        run: |
+          echo "❌ Deploy failed post-deploy health check and rollback was triggered"
+          echo "  Check the rollback step above for details"
+          exit 1
+
+      # ──── CLEANUP ────
+
       - name: Cleanup merged branches
         if: success()
         continue-on-error: true
@@ -293,7 +587,8 @@ jobs:
         run: |
           ssh -i ~/.ssh/id_ed25519 ${{ env.VPS_USER }}@${{ env.VPS_HOST }} bash -s <<'PRUNE'
             echo "🧹 Pruning old Docker images..."
-            docker image prune -a -f --filter 'until=24h' 2>/dev/null || true
+            # Exclude rollback-tagged images from pruning
+            docker image prune -f --filter 'until=24h' 2>/dev/null || true
             docker builder prune -f --filter 'until=48h' 2>/dev/null || true
             echo "📊 Disk usage:"
             df -h / || true
@@ -307,7 +602,9 @@ jobs:
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
           DEPLOY_STATUS="success"
-          if [ "${{ job.status }}" = "failure" ] || [ "${{ job.status }}" = "cancelled" ]; then
+          if [ "${{ steps.health-check.outcome }}" = "failure" ]; then
+            DEPLOY_STATUS="rolled_back"
+          elif [ "${{ job.status }}" = "failure" ] || [ "${{ job.status }}" = "cancelled" ]; then
             DEPLOY_STATUS="failed"
           fi
 
