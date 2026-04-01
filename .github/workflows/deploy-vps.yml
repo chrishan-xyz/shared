@@ -86,19 +86,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Checkout shared dependencies
-        uses: actions/checkout@v4
-        with:
-          repository: chrishan-xyz/shared
-          path: _shared
-          token: ${{ secrets.CROSS_REPO_TOKEN }}
-      - name: Setup shared directory
+      - name: Clone shared dependencies
+        env:
+          CLONE_TOKEN: ${{ secrets.CROSS_REPO_TOKEN }}
         run: |
-          # Apps reference shared via ../../shared/ from lib/ subdirs
-          # We need shared at ../shared/ relative to the checkout root
           SHARED_DIR="$(cd .. && pwd)/shared"
-          rm -rf "$SHARED_DIR"
-          cp -r _shared "$SHARED_DIR"
+          if [ -n "$CLONE_TOKEN" ]; then
+            git clone --depth 1 https://x-access-token:${CLONE_TOKEN}@github.com/chrishan-xyz/shared.git "$SHARED_DIR"
+          else
+            git clone --depth 1 https://github.com/chrishan-xyz/shared.git "$SHARED_DIR" || {
+              echo "❌ Cannot clone private shared repo — set CROSS_REPO_TOKEN org secret"
+              exit 1
+            }
+          fi
           cd "$SHARED_DIR" && npm install --omit=dev 2>/dev/null || true
       - uses: actions/setup-node@v4
         with:
@@ -152,12 +152,16 @@ jobs:
             -e "ssh -i ~/.ssh/id_ed25519" \
             ${{ inputs.source-subdir }} ${{ env.VPS_USER }}@${{ env.VPS_HOST }}:${{ inputs.vps-path }}/
 
-      - name: Checkout shared for deploy
-        uses: actions/checkout@v4
-        with:
-          repository: chrishan-xyz/shared
-          path: _shared
-          token: ${{ secrets.CROSS_REPO_TOKEN }}
+      - name: Clone shared for deploy
+        env:
+          CLONE_TOKEN: ${{ secrets.CROSS_REPO_TOKEN }}
+        run: |
+          SHARED_DIR="/tmp/shared-deps"
+          if [ -n "$CLONE_TOKEN" ]; then
+            git clone --depth 1 https://x-access-token:${CLONE_TOKEN}@github.com/chrishan-xyz/shared.git "$SHARED_DIR"
+          else
+            git clone --depth 1 https://github.com/chrishan-xyz/shared.git "$SHARED_DIR" 2>/dev/null || true
+          fi
 
       - name: Sync shared dependencies to VPS
         run: |
@@ -165,7 +169,7 @@ jobs:
           rsync -az --delete \
             --exclude=.git --exclude=node_modules \
             -e "ssh -i ~/.ssh/id_ed25519" \
-            "_shared/" ${{ env.VPS_USER }}@${{ env.VPS_HOST }}:~/caddy/shared/
+            "/tmp/shared-deps/" ${{ env.VPS_USER }}@${{ env.VPS_HOST }}:~/caddy/shared/
 
       - name: Build and deploy container
         run: |
