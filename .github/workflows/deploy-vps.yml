@@ -84,6 +84,10 @@ on:
         description: 'Comma-separated routes to check during smoke test (e.g. /api/health,/api/tasks). If empty, only health-endpoint is checked.'
         default: ''
         type: string
+      auto-merge-branches:
+        description: 'Comma-separated branch glob patterns to auto-merge to main before deploy (e.g. "hatch/**,navi/**"). Empty = disabled.'
+        default: ''
+        type: string
     secrets:
       VPS_SSH_KEY:
         required: true
@@ -139,9 +143,84 @@ jobs:
         if: inputs.build-client
         run: cd ${{ inputs.npm-workdir }}/client && npm ci && npm run build
 
-  deploy:
+  # ──── AUTO-MERGE (optional) ────
+  # When auto-merge-branches is set and we're on a matching feature branch,
+  # merge to main after tests pass, then let deploy pick it up.
+  auto-merge:
     needs: test
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: inputs.auto-merge-branches != '' && github.ref != 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: auto-merge-${{ inputs.app-name }}
+      cancel-in-progress: true
+    outputs:
+      merged: ${{ steps.merge.outputs.merged }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.CROSS_REPO_TOKEN || github.token }}
+
+      - name: Configure git
+        run: |
+          git config user.name "arlo-ci"
+          git config user.email "arlo-ci@users.noreply.github.com"
+
+      - name: Coalescing delay
+        run: |
+          echo "⏳ Waiting 15s for deploy coalescing..."
+          sleep 15
+
+      - name: Merge to main
+        id: merge
+        run: |
+          BRANCH="${GITHUB_REF#refs/heads/}"
+          echo "🔀 Merging $BRANCH → main"
+
+          git fetch origin main
+          git checkout main
+          git reset --hard origin/main
+
+          # Try fast-forward first, fall back to merge commit
+          if git merge --ff-only "origin/$BRANCH" 2>/dev/null; then
+            echo "✅ Fast-forward merge succeeded"
+          else
+            echo "⚠️  Cannot fast-forward — attempting merge commit"
+            if git merge "origin/$BRANCH" --no-edit 2>/dev/null; then
+              echo "✅ Merge commit succeeded"
+            else
+              echo "❌ CONFLICT — $BRANCH cannot be auto-merged"
+              echo "   The dispatcher must rebase on main and re-push."
+              git merge --abort 2>/dev/null
+              echo "merged=false" >> "$GITHUB_OUTPUT"
+              exit 1
+            fi
+          fi
+
+          git push origin main
+          echo "merged=true" >> "$GITHUB_OUTPUT"
+          echo "✅ Pushed merged main"
+
+      - name: Delete feature branch
+        if: steps.merge.outputs.merged == 'true'
+        run: |
+          BRANCH="${GITHUB_REF#refs/heads/}"
+          git push origin --delete "$BRANCH" 2>/dev/null || echo "Branch already deleted"
+          echo "🗑️  Deleted $BRANCH"
+
+  deploy:
+    needs: [test, auto-merge]
+    # Deploy when:
+    # 1. Direct push to main (auto-merge skipped) — standard CI/CD
+    # 2. Feature branch auto-merged to main successfully
+    if: |
+      always() &&
+      needs.test.result == 'success' &&
+      github.event_name == 'push' &&
+      (
+        (github.ref == 'refs/heads/main' && needs.auto-merge.result == 'skipped') ||
+        (needs.auto-merge.result == 'success')
+      )
     runs-on: ubuntu-latest
     concurrency:
       group: deploy-${{ inputs.app-name }}
@@ -189,6 +268,14 @@ jobs:
             --exclude=.git --exclude=node_modules \
             -e "ssh -i ~/.ssh/id_ed25519" \
             "/tmp/shared-deps/" ${{ env.VPS_USER }}@${{ env.VPS_HOST }}:~/caddy/shared/
+
+      - name: Prepare shared deps for Docker build (blue-green)
+        if: inputs.deploy-strategy == 'blue-green'
+        run: |
+          # Blue-green builds Docker image locally — needs _shared/ in build context
+          cd /tmp/shared-deps && npm install --omit=dev 2>/dev/null || true
+          cp -r /tmp/shared-deps ./_shared
+          echo "✅ _shared/ directory ready for local Docker build"
 
       # ──── ROLLBACK PREPARATION ────
 
