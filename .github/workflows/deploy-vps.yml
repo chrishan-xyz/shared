@@ -474,7 +474,7 @@ jobs:
           echo "🐳 Building ${{ inputs.app-name }} for blue-green deploy..."
 
           # Login to GHCR
-          echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          echo "${{ secrets.GHCR_TOKEN || github.token }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
           # Build image locally in CI runner
           docker build --no-cache \
