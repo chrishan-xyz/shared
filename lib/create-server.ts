@@ -1,4 +1,6 @@
 import * as path from 'path';
+import { execSync } from 'child_process';
+import { readFileSync } from 'fs';
 import type { Application, Request, Response, NextFunction } from 'express';
 import type { Server } from 'http';
 import type { Socket } from 'net';
@@ -149,12 +151,33 @@ function createServer(opts: ServerConfig): ServerApplication {
   });
 
   // ── Health check ────────────────────────────────────────────────────
+  // Cache git SHA and package version at startup
+  let _gitSha = process.env.GIT_SHA || 'unknown';
+  if (_gitSha === 'unknown') {
+    try {
+      _gitSha = execSync('git rev-parse --short HEAD', { timeout: 3000 }).toString().trim();
+    } catch {
+      // Not in a git repo or git not available
+    }
+  }
+
+  let _pkgVersion = '0.0.0';
+  try {
+    const pkg = JSON.parse(readFileSync(path.join(process.cwd(), 'package.json'), 'utf-8')) as { version?: string };
+    _pkgVersion = pkg.version || '0.0.0';
+  } catch {
+    // package.json not found
+  }
+
   app.get('/api/health', (_req: Request, res: Response) => {
     const extra = onHealthCheck ? onHealthCheck() : {};
     res.json({
       status: 'ok',
       app: appName,
-      uptime_seconds: Math.floor(process.uptime()),
+      uptime: Math.floor(process.uptime()),
+      version: _pkgVersion,
+      gitSha: _gitSha,
+      timestamp: new Date().toISOString(),
       ...extra,
     });
   });
