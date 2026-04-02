@@ -88,6 +88,10 @@ on:
         description: 'Comma-separated branch glob patterns to auto-merge to main before deploy (e.g. "hatch/**,navi/**"). Empty = disabled.'
         default: ''
         type: string
+      db-validation:
+        description: 'Verify DB_PATH env in running container matches the app name (prevents wrong-database bugs)'
+        default: true
+        type: boolean
     secrets:
       VPS_SSH_KEY:
         required: true
@@ -533,6 +537,47 @@ jobs:
             fi
           HEALTHCHECK
 
+      # ──── DB_PATH VALIDATION ────
+
+      - name: Validate DB_PATH environment
+        if: inputs.db-validation && steps.health-check.outcome == 'success'
+        continue-on-error: true
+        run: |
+          CONTAINER="${{ inputs.container-name }}"
+          APP_NAME="${{ inputs.app-name }}"
+          STRATEGY="${{ inputs.deploy-strategy }}"
+
+          echo "🔍 Validating DB_PATH for ${APP_NAME}..."
+          ssh -i ~/.ssh/id_ed25519 ${{ env.VPS_USER }}@${{ env.VPS_HOST }} bash -s <<DBCHECK
+            if [ "${STRATEGY}" = "blue-green" ]; then
+              ACTIVE_COLOR=\$(cat ~/caddy/arlos/active-color 2>/dev/null || echo "blue")
+              TARGET="${CONTAINER}-\${ACTIVE_COLOR}"
+            else
+              TARGET="${CONTAINER}"
+            fi
+
+            DB_PATH=\$(docker exec \${TARGET} printenv DB_PATH 2>/dev/null || echo "")
+
+            if [ -z "\$DB_PATH" ]; then
+              echo "ℹ️  DB_PATH not set in \${TARGET} — skipping validation (app may not use SQLite)"
+              exit 0
+            fi
+
+            # Extract the database filename from the path (e.g. /data/arlos.db → arlos)
+            DB_FILE=\$(basename "\$DB_PATH" .db)
+            echo "  DB_PATH=\${DB_PATH} (db file: \${DB_FILE})"
+
+            # Validate: the db filename should contain the app name
+            if echo "\${DB_FILE}" | grep -qi "${APP_NAME}"; then
+              echo "✅ DB_PATH correctly references ${APP_NAME}"
+            else
+              echo "❌ DB_PATH MISMATCH: expected db name to contain '${APP_NAME}' but got '\${DB_FILE}'"
+              echo "  This may indicate a copy-paste error in docker-compose.yml"
+              echo "  DB_PATH=\${DB_PATH}"
+              exit 1
+            fi
+          DBCHECK
+
       # ──── ROLLBACK ON FAILURE ────
 
       - name: Rollback (in-place)
@@ -673,12 +718,17 @@ jobs:
         continue-on-error: true
         run: |
           ssh -i ~/.ssh/id_ed25519 ${{ env.VPS_USER }}@${{ env.VPS_HOST }} bash -s <<'PRUNE'
-            echo "🧹 Pruning old Docker images..."
-            # Exclude rollback-tagged images from pruning
-            docker image prune -f --filter 'until=24h' 2>/dev/null || true
+            echo "🧹 Pruning Docker images across all apps..."
+            # Prune all dangling images (untagged, no longer referenced)
+            docker image prune -f 2>/dev/null || true
+            # Also prune builder cache older than 48h
             docker builder prune -f --filter 'until=48h' 2>/dev/null || true
+            # Clean up stopped containers
+            docker container prune -f --filter 'until=24h' 2>/dev/null || true
             echo "📊 Disk usage:"
             df -h / || true
+            echo "📦 Docker disk usage:"
+            docker system df 2>/dev/null || true
           PRUNE
 
       - name: Record deployment
