@@ -278,6 +278,7 @@ jobs:
         run: |
           # Blue-green builds Docker image locally — needs _shared/ in build context
           cd /tmp/shared-deps && npm install --omit=dev 2>/dev/null || true
+          cd $GITHUB_WORKSPACE
           cp -r /tmp/shared-deps ./_shared
           echo "✅ _shared/ directory ready for local Docker build"
 
