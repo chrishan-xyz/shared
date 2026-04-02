@@ -75,3 +75,11 @@ export type { InlineSearchProps } from './InlineSearch';
 import './InlineSearch.css';
 
 // export { SectionHeader } from './SectionHeader';
+
+// ── Error Pages ─────────────────────────────────────────────────────────────
+// Full-page 404/500 error displays shared across all apps.
+
+export { default as ErrorPage } from './ErrorPage';
+export type { ErrorPageProps } from './ErrorPage';
+
+import './ErrorPage.css';
