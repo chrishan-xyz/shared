@@ -638,6 +638,47 @@ jobs:
             exit 1
           fi
 
+      # ──── CROSS-SITE SMOKE TEST ────
+      # After individual site checks pass, verify ALL sites are still healthy.
+      # A deploy to one site can break others (shared Caddyfile, network, etc).
+
+      - name: Cross-site smoke test
+        id: cross-site-smoke
+        if: steps.health-check.outcome == 'success'
+        continue-on-error: true
+        run: |
+          echo "🧪 Running cross-site smoke test (all 4 sites)..."
+          
+          # Define all sites and their health endpoints
+          declare -A SITES=(
+            [arlos]="https://arlo.chrishan.xyz/api/health"
+            [recharge]="https://recharge.chrishan.xyz/api/health"
+            [feed]="https://feed.chrishan.xyz/api/health"
+            [home]="https://chrishan.xyz/api/health"
+          )
+          
+          FAILED=0
+          for site in "${!SITES[@]}"; do
+            url="${SITES[$site]}"
+            HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 10 --max-time 20 -L "$url" 2>/dev/null || echo "000")
+            if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "401" ] || [ "$HTTP_CODE" = "302" ]; then
+              echo "  ✅ $site ($url) → $HTTP_CODE"
+            else
+              echo "  ❌ $site ($url) → $HTTP_CODE"
+              FAILED=$((FAILED + 1))
+            fi
+          done
+          
+          if [ "$FAILED" -gt 0 ]; then
+            echo ""
+            echo "⚠️ Cross-site smoke test: $FAILED site(s) unreachable after deploying ${{ inputs.app-name }}"
+            echo "  This deploy may have affected other sites (shared Caddyfile, network config, etc)"
+            exit 1
+          else
+            echo ""
+            echo "✅ All sites healthy after deploying ${{ inputs.app-name }}"
+          fi
+
       # ──── ROLLBACK ON FAILURE ────
 
       - name: Rollback (in-place)
