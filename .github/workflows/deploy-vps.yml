@@ -365,7 +365,7 @@ jobs:
             docker rm -f ${CONTAINER} 2>/dev/null || true
 
             # Boot container in isolation on a random high port
-            docker run -d --name ${CONTAINER} -p 0:${HEALTH_PORT} ${IMAGE_NAME} || {
+            docker run -d --name ${CONTAINER} -e NODE_ENV=test -p 0:${HEALTH_PORT} ${IMAGE_NAME} || {
               echo "❌ Failed to start smoke test container"
               exit 1
             }
