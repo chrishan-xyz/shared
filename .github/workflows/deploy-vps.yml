@@ -879,3 +879,29 @@ jobs:
           else
             echo "ℹ️ ARLOS_API_KEY not set — skipping deploy recording"
           fi
+
+      - name: Signal CI failure to Hatch
+        if: failure()
+        continue-on-error: true
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST || '204.168.189.154' }}
+          VPS_USER: ${{ secrets.VPS_USER || 'chris' }}
+        run: |
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          SIGNAL_DIR="/tmp/ci-failures"
+          SIGNAL_FILE="$SIGNAL_DIR/${{ inputs.app-name }}-${{ github.run_id }}.json"
+          ssh -o StrictHostKeyChecking=no ${VPS_USER}@${VPS_HOST} "
+            mkdir -p $SIGNAL_DIR
+            cat > $SIGNAL_FILE << SIGNAL_EOF
+          {
+            \"app\": \"${{ inputs.app-name }}\",
+            \"repo\": \"${{ github.repository }}\",
+            \"run_id\": ${{ github.run_id }},
+            \"run_url\": \"$RUN_URL\",
+            \"sha\": \"${{ github.sha }}\",
+            \"branch\": \"${{ github.ref_name }}\",
+            \"actor\": \"${{ github.actor }}\",
+            \"failed_at\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
+          }
+          SIGNAL_EOF
+          " || echo "⚠️ Failed to write CI failure signal (non-fatal)"
