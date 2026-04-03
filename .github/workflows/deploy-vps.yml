@@ -454,7 +454,7 @@ jobs:
             echo "⏳ Waiting for health check..."
             for i in \$(seq 1 12); do
               sleep 5
-              STATUS=\$(docker exec ${CONTAINER} wget -q -O- http://127.0.0.1:${HEALTH_PORT}${HEALTH_PATH} 2>/dev/null | grep -c '"status"' || echo "0")
+              STATUS=\$(docker exec ${CONTAINER} wget -q -O- http://127.0.0.1:${HEALTH_PORT}${HEALTH_PATH} 2>/dev/null | grep -c '"status"' || true)
               if [ "\$STATUS" -ge "1" ]; then
                 echo "✅ ${{ inputs.app-name }} deployed and healthy"
                 exit 0
@@ -531,7 +531,7 @@ jobs:
 
             for i in \$(seq 1 6); do
               sleep 5
-              STATUS=\$(docker exec \${ACTIVE_CONTAINER} wget -q -O- http://127.0.0.1:${HEALTH_PORT}${HEALTH_PATH} 2>/dev/null | grep -c '"status"' || echo "0")
+              STATUS=\$(docker exec \${ACTIVE_CONTAINER} wget -q -O- http://127.0.0.1:${HEALTH_PORT}${HEALTH_PATH} 2>/dev/null | grep -c '"status"' || true)
               if [ "\$STATUS" -ge "1" ]; then
                 echo "✅ Post-deploy health check passed"
                 HEALTHY=1
@@ -723,7 +723,7 @@ jobs:
             echo "⏳ Verifying rollback health..."
             for i in \$(seq 1 12); do
               sleep 5
-              STATUS=\$(docker exec ${CONTAINER} wget -q -O- http://127.0.0.1:${HEALTH_PORT}${HEALTH_PATH} 2>/dev/null | grep -c '"status"' || echo "0")
+              STATUS=\$(docker exec ${CONTAINER} wget -q -O- http://127.0.0.1:${HEALTH_PORT}${HEALTH_PATH} 2>/dev/null | grep -c '"status"' || true)
               if [ "\$STATUS" -ge "1" ]; then
                 echo "✅ Rollback successful — ${{ inputs.app-name }} restored to previous version"
                 exit 0
@@ -780,7 +780,7 @@ jobs:
             echo "⏳ Verifying rollback health on \${PREV_CONTAINER}..."
             for i in \$(seq 1 6); do
               sleep 5
-              STATUS=\$(docker exec \${PREV_CONTAINER} wget -q -O- http://127.0.0.1:${HEALTH_PORT}${HEALTH_PATH} 2>/dev/null | grep -c '"status"' || echo "0")
+              STATUS=\$(docker exec \${PREV_CONTAINER} wget -q -O- http://127.0.0.1:${HEALTH_PORT}${HEALTH_PATH} 2>/dev/null | grep -c '"status"' || true)
               if [ "\$STATUS" -ge "1" ]; then
                 echo "✅ Rollback successful — ${{ inputs.app-name }} restored to ${PREV_COLOR}"
                 exit 0
