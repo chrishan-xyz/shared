@@ -448,7 +448,7 @@ jobs:
             cd ~/caddy || exit 1
 
             # Restart container via compose
-            docker compose up -d ${CONTAINER} || { echo "❌ Docker compose up failed"; exit 1; }
+            docker compose up -d --force-recreate ${CONTAINER} || { echo "❌ Docker compose up failed"; exit 1; }
 
             # Post-deploy health check
             echo "⏳ Waiting for health check..."
