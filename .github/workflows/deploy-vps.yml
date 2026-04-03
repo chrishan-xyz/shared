@@ -489,7 +489,7 @@ jobs:
             docker compose build --no-cache --build-arg COMMIT_SHA=${COMMIT_SHA} ${CONTAINER} || { echo "❌ Docker build failed"; exit 1; }
 
             # Restart container via compose
-            docker compose up -d --force-recreate ${CONTAINER} || { echo "❌ Docker compose up failed"; exit 1; }
+            docker compose up -d --force-recreate --no-build ${CONTAINER} || { echo "❌ Docker compose up failed"; exit 1; }
 
             # Post-deploy health check
             echo "⏳ Waiting for health check..."
@@ -941,7 +941,7 @@ jobs:
             echo "  Tagged ${ROLLBACK_TAG} → ${IMAGE_NAME}"
 
             # Force recreate with the rolled-back image
-            docker compose up -d ${CONTAINER} --force-recreate || {
+            docker compose up -d --no-build ${CONTAINER} --force-recreate || {
               echo "❌ Rollback compose up failed"
               exit 1
             }
