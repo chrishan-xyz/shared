@@ -555,36 +555,74 @@ jobs:
           HEALTH_PORT="${{ inputs.health-port }}"
           HEALTH_PATH="${{ inputs.health-endpoint }}"
           STRATEGY="${{ inputs.deploy-strategy }}"
+          EXPECTED_SHA="${{ github.sha }}"
 
           echo "🏥 Running post-deploy health check for ${{ inputs.app-name }}..."
-          ssh -i ~/.ssh/id_ed25519 ${{ env.VPS_USER }}@${{ env.VPS_HOST }} bash -s <<HEALTHCHECK
+          ssh -i ~/.ssh/id_ed25519 ${{ env.VPS_USER }}@${{ env.VPS_HOST }} bash -s -- "${CONTAINER}" "${HEALTH_PORT}" "${HEALTH_PATH}" "${STRATEGY}" "${EXPECTED_SHA}" <<'HEALTHCHECK'
+            CONTAINER="$1"
+            HEALTH_PORT="$2"
+            HEALTH_PATH="$3"
+            STRATEGY="$4"
+            EXPECTED_SHA="$5"
             HEALTHY=0
 
             if [ "${STRATEGY}" = "blue-green" ]; then
-              # For blue-green, check via the active container
-              ACTIVE_COLOR=\$(cat ~/caddy/arlos/active-color 2>/dev/null || echo "blue")
-              ACTIVE_CONTAINER="${CONTAINER}-\${ACTIVE_COLOR}"
-              echo "  Checking active container: \${ACTIVE_CONTAINER}"
+              ACTIVE_COLOR=$(cat ~/caddy/arlos/active-color 2>/dev/null || echo "blue")
+              ACTIVE_CONTAINER="${CONTAINER}-${ACTIVE_COLOR}"
+              echo "  Checking active container: ${ACTIVE_CONTAINER}"
             else
               ACTIVE_CONTAINER="${CONTAINER}"
             fi
 
-            for i in \$(seq 1 6); do
+            # Phase 1: Wait for container to become healthy (basic reachability)
+            for i in $(seq 1 12); do
               sleep 5
-              STATUS=\$(docker exec \${ACTIVE_CONTAINER} wget -q -O- http://127.0.0.1:${HEALTH_PORT}${HEALTH_PATH} 2>/dev/null | grep -c '"status"' || true)
-              if [ "\$STATUS" -ge "1" ]; then
-                echo "✅ Post-deploy health check passed"
+              RESPONSE=$(docker exec ${ACTIVE_CONTAINER} wget -q -O- http://127.0.0.1:${HEALTH_PORT}${HEALTH_PATH} 2>/dev/null || echo "")
+              if echo "$RESPONSE" | grep -q '"status"'; then
                 HEALTHY=1
                 break
               fi
-              echo "  Health check attempt \$i/6: waiting..."
+              echo "  Health check attempt $i/12: waiting for container..."
             done
 
-            if [ "\$HEALTHY" -ne 1 ]; then
-              echo "❌ Post-deploy health check FAILED"
-              docker logs \${ACTIVE_CONTAINER} --tail 30
+            if [ "$HEALTHY" -ne 1 ]; then
+              echo "❌ Post-deploy health check FAILED — container not responding"
+              docker logs ${ACTIVE_CONTAINER} --tail 30
               exit 1
             fi
+
+            # Phase 2: Verify response is valid JSON (not HTML/error page)
+            echo "🔍 Verifying response quality..."
+            echo "  Response: $(echo "$RESPONSE" | head -c 500)"
+
+            # Check for JSON content (must contain { and "status")
+            if ! echo "$RESPONSE" | grep -q '^{'; then
+              echo "❌ Response is not JSON — got unexpected content (HTML? error page?)"
+              echo "  First 200 chars: $(echo "$RESPONSE" | head -c 200)"
+              exit 1
+            fi
+            echo "  ✅ Response is JSON"
+
+            # Phase 3: Verify GIT_SHA matches deployed commit
+            if [ -n "$EXPECTED_SHA" ]; then
+              EXPECTED_SHORT=$(echo "$EXPECTED_SHA" | cut -c1-7)
+              # Check if response contains the full SHA or short SHA in any common field
+              if echo "$RESPONSE" | grep -q "$EXPECTED_SHA"; then
+                echo "  ✅ GIT_SHA matches deployed commit ($EXPECTED_SHORT)"
+              elif echo "$RESPONSE" | grep -q "$EXPECTED_SHORT"; then
+                echo "  ✅ GIT_SHA (short) matches deployed commit ($EXPECTED_SHORT)"
+              else
+                # Extract any SHA-like values from response for diagnostics
+                FOUND_SHA=$(echo "$RESPONSE" | grep -oE '"(git_sha|gitSha|GIT_SHA|sha|commit|version)"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 || echo "none found")
+                echo "  ❌ GIT_SHA MISMATCH — deployed commit not found in health response"
+                echo "     Expected: $EXPECTED_SHA ($EXPECTED_SHORT)"
+                echo "     Found in response: $FOUND_SHA"
+                echo "     This means the container is running OLD code — the deploy may not have taken effect"
+                exit 1
+              fi
+            fi
+
+            echo "✅ Post-deploy health check passed (healthy + JSON + SHA verified)"
           HEALTHCHECK
 
       # ──── DB_PATH VALIDATION ────
@@ -637,6 +675,8 @@ jobs:
         run: |
           PUBLIC_URL="${{ inputs.public-url }}"
           HEALTH_PATH="${{ inputs.health-endpoint }}"
+          EXPECTED_SHA="${{ github.sha }}"
+          EXPECTED_SHORT=$(echo "${EXPECTED_SHA}" | cut -c1-7)
 
           echo "🌐 Verifying public URL: ${PUBLIC_URL}"
           echo "   This checks the full path: Internet → DNS → Caddy → TLS → Container"
@@ -654,14 +694,39 @@ jobs:
             echo "  ❌ ${PUBLIC_URL}/ → ${HTTP_CODE}"
           fi
 
-          # Check 2: Health endpoint (may be behind auth — accept 200/401/302)
+          # Check 2: Health endpoint — strict verification (200 + JSON + SHA)
           CHECKS_TOTAL=$((CHECKS_TOTAL + 1))
-          HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 10 --max-time 20 -L "${PUBLIC_URL}${HEALTH_PATH}" 2>/dev/null || echo "000")
-          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "401" ] || [ "$HTTP_CODE" = "302" ]; then
-            echo "  ✅ ${PUBLIC_URL}${HEALTH_PATH} → ${HTTP_CODE}"
+          HEALTH_RESPONSE=$(curl -s -w "\n%{http_code}\n%{content_type}" --connect-timeout 10 --max-time 20 -L "${PUBLIC_URL}${HEALTH_PATH}" 2>/dev/null)
+          HEALTH_BODY=$(echo "$HEALTH_RESPONSE" | sed '$d' | sed '$d')
+          HEALTH_CODE=$(echo "$HEALTH_RESPONSE" | tail -2 | head -1)
+          HEALTH_CT=$(echo "$HEALTH_RESPONSE" | tail -1)
+
+          if [ "$HEALTH_CODE" = "200" ]; then
+            # Got 200 — verify it's JSON with correct SHA
+            if echo "$HEALTH_CT" | grep -qi "json"; then
+              echo "  ✅ ${PUBLIC_URL}${HEALTH_PATH} → 200 + JSON"
+              # Verify GIT_SHA through public URL
+              if echo "$HEALTH_BODY" | grep -q "$EXPECTED_SHA" || echo "$HEALTH_BODY" | grep -q "$EXPECTED_SHORT"; then
+                echo "  ✅ GIT_SHA verified through public URL (${EXPECTED_SHORT})"
+              else
+                echo "  ⚠️ GIT_SHA not found in public URL health response"
+                echo "     Expected: ${EXPECTED_SHORT}"
+                echo "     Response: $(echo "$HEALTH_BODY" | head -c 300)"
+              fi
+              CHECKS_PASSED=$((CHECKS_PASSED + 1))
+            else
+              echo "  ❌ ${PUBLIC_URL}${HEALTH_PATH} → 200 but NOT JSON (content-type: ${HEALTH_CT})"
+              echo "     This may indicate a proxy is serving an HTML page instead of the API"
+              echo "     Body preview: $(echo "$HEALTH_BODY" | head -c 200)"
+            fi
+          elif [ "$HEALTH_CODE" = "401" ] || [ "$HEALTH_CODE" = "302" ]; then
+            # Auth middleware blocking — note but don't fail (container health already verified)
+            echo "  ⚠️ ${PUBLIC_URL}${HEALTH_PATH} → ${HEALTH_CODE} (auth middleware)"
+            echo "     Container-level health check already verified JSON + SHA"
+            echo "     Consider adding ${HEALTH_PATH} to Authelia bypass rules"
             CHECKS_PASSED=$((CHECKS_PASSED + 1))
           else
-            echo "  ❌ ${PUBLIC_URL}${HEALTH_PATH} → ${HTTP_CODE}"
+            echo "  ❌ ${PUBLIC_URL}${HEALTH_PATH} → ${HEALTH_CODE}"
           fi
 
           # Check 3: TLS certificate valid
@@ -694,6 +759,8 @@ jobs:
         run: |
           PUBLIC_URL="${{ inputs.public-url }}"
           JSON_ROUTES="${{ inputs.smoke-test-json-routes }}"
+          EXPECTED_SHA="${{ github.sha }}"
+          EXPECTED_SHORT=$(echo "${EXPECTED_SHA}" | cut -c1-7)
 
           if [ -z "$PUBLIC_URL" ]; then
             echo "⚠️ No public-url set, skipping deep smoke test"
@@ -731,6 +798,16 @@ jobs:
               echo "  ❌ ${ROUTE} → 200 but content-type is '${CONTENT_TYPE}' (expected JSON)"
               echo "     First 200 chars of body: $(echo "$BODY" | head -c 200)"
               FAILED=$((FAILED + 1))
+              continue
+            fi
+
+            # For health endpoint specifically, verify GIT_SHA
+            if [ "$ROUTE" = "/api/health" ] || echo "$ROUTE" | grep -q "health"; then
+              if echo "$BODY" | grep -q "$EXPECTED_SHA" || echo "$BODY" | grep -q "$EXPECTED_SHORT"; then
+                echo "       ✅ GIT_SHA verified (${EXPECTED_SHORT})"
+              else
+                echo "       ⚠️ GIT_SHA not found in response (expected ${EXPECTED_SHORT})"
+              fi
             fi
           done
 
