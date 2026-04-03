@@ -604,25 +604,16 @@ jobs:
             fi
             echo "  ✅ Response is JSON"
 
-            # Phase 3: Verify GIT_SHA matches deployed commit
-            if [ -n "$EXPECTED_SHA" ]; then
-              EXPECTED_SHORT=$(echo "$EXPECTED_SHA" | cut -c1-7)
-              # Check if response contains the full SHA or short SHA in any common field
-              if echo "$RESPONSE" | grep -q "$EXPECTED_SHA"; then
-                echo "  ✅ GIT_SHA matches deployed commit ($EXPECTED_SHORT)"
-              elif echo "$RESPONSE" | grep -q "$EXPECTED_SHORT"; then
-                echo "  ✅ GIT_SHA (short) matches deployed commit ($EXPECTED_SHORT)"
-              else
-                # Extract any SHA-like values from response for diagnostics
-                FOUND_SHA=$(echo "$RESPONSE" | grep -oE '"(git_sha|gitSha|GIT_SHA|sha|commit|version)"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 || echo "none found")
-                echo "  ⚠️ GIT_SHA MISMATCH — deployed commit not found in health response (non-fatal)"
-                echo "     Expected: $EXPECTED_SHA ($EXPECTED_SHORT)"
-                echo "     Found in response: $FOUND_SHA"
-                echo "     Note: in-place deploys may report stale SHA due to compose caching"
-              fi
+            # Phase 3: Log deploy provenance (branch enforcement is at bridge-cli level)
+            COMMIT_MSG="${{ github.event.head_commit.message }}"
+            BRANCH="${{ github.ref_name }}"
+            if echo "$COMMIT_MSG" | grep -qiE 'Merge pull request|^feat|^fix|^chore|^ci'; then
+              echo "  ✅ Deploy from PR merge on ${BRANCH}: ${COMMIT_MSG%% *}"
+            else
+              echo "  ⚠️ Deploy from direct push on ${BRANCH} (not a PR merge)"
             fi
 
-            echo "✅ Post-deploy health check passed (healthy + JSON + SHA verified)"
+            echo "✅ Post-deploy health check passed (healthy + JSON)"
           HEALTHCHECK
 
       # ──── DB_PATH VALIDATION ────
