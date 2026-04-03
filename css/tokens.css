@@ -45,33 +45,33 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 
 :root[data-theme="dark"], :root:not([data-theme]) {
-  /* ── Backgrounds ── */
-  --bg-base: #0A0A0A;
-  --bg-surface: #141414;
-  --bg-elevated: #1C1C1C;
-  --bg-hover: #242424;
+  /* ── Backgrounds (Catppuccin Mocha — warm navy, easy on eyes) ── */
+  --bg-base: #1e1e2e;
+  --bg-surface: #313244;
+  --bg-elevated: #45475a;
+  --bg-hover: #585b70;
 
-  /* ── Text ── */
-  --text-primary: #F0F0F0;
-  --text-secondary: #9A9A9A;
-  --text-tertiary: #6A6A6A;
+  /* ── Text (all pass WCAG AA 4.5:1 on base AND surface) ── */
+  --text-primary: #cdd6f4;    /* 11.3:1 on base */
+  --text-secondary: #bac2de;  /*  9.3:1 on base */
+  --text-tertiary: #a6adc8;   /*  7.4:1 on base */
 
-  /* ── Semantic Colors ── */
-  --green: #30D158;
-  --green-soft: rgba(48, 209, 88, 0.12);
-  --yellow: #FFD60A;
-  --yellow-soft: rgba(255, 214, 10, 0.12);
-  --red: #FF453A;
-  --red-soft: rgba(255, 69, 58, 0.12);
-  --orange: #FF9F0A;
+  /* ── Semantic Colors (Catppuccin pastels — softer, less jarring) ── */
+  --green: #a6e3a1;
+  --green-soft: rgba(166, 227, 161, 0.15);
+  --yellow: #f9e2af;
+  --yellow-soft: rgba(249, 226, 175, 0.15);
+  --red: #f38ba8;
+  --red-soft: rgba(243, 139, 168, 0.15);
+  --orange: #fab387;
 
   /* ── Borders & Dividers ── */
-  --divider: rgba(34, 34, 34, 1);
+  --divider: #313244;
 
   /* ── Default accent (override per app) ── */
-  --accent: #FFBF00;
-  --accent-soft: rgba(255, 191, 0, 0.12);
-  --text-on-accent: #000000;
+  --accent: #f9e2af;
+  --accent-soft: rgba(249, 226, 175, 0.15);
+  --text-on-accent: #1e1e2e;
 
   color-scheme: dark;
 }

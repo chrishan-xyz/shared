@@ -157,6 +157,37 @@ jobs:
         if: inputs.build-client
         run: cd ${{ inputs.npm-workdir }}/client && npm ci && npm run build
 
+      - name: Notify CI result via ntfy
+        if: always()
+        continue-on-error: true
+        run: |
+          NTFY_KEY="${{ secrets.NTFY_TOKEN }}"
+          [ -z "$NTFY_KEY" ] && exit 0
+
+          REPO="${{ github.repository }}"
+          APP="${REPO##*/}"
+          BRANCH="${{ github.ref_name }}"
+          COMMIT_SHORT=$(echo '${{ github.sha }}' | cut -c1-7)
+          RUN_URL="${{ github.server_url }}/${REPO}/actions/runs/${{ github.run_id }}"
+
+          if [ "${{ job.status }}" = "success" ]; then
+            MSG="✅ CI passed: ${APP} (${BRANCH} ${COMMIT_SHORT})"
+            PRIO="default"
+            TAG="white_check_mark"
+          else
+            MSG="🔴 CI failed: ${APP} (${BRANCH} ${COMMIT_SHORT})"
+            PRIO="high"
+            TAG="rotating_light"
+          fi
+
+          curl -sf -d "${MSG}" \
+            -H "Authorization: Bearer ${NTFY_KEY}" \
+            -H "Title: CI: ${APP}" \
+            -H "Tags: ${TAG}" \
+            -H "Click: ${RUN_URL}" \
+            -H "Priority: ${PRIO}" \
+            "https://ntfy.chrishan.xyz/ci" || true
+
   # ──── AUTO-MERGE (optional) ────
   # When auto-merge-branches is set and we're on a matching feature branch,
   # merge to main after tests pass, then let deploy pick it up.
