@@ -689,6 +689,55 @@ jobs:
             echo "✅ All sites healthy after deploying ${{ inputs.app-name }}"
           fi
 
+      # ──── GHCR REGISTRY SYNC (in-place) ────
+      # After a successful in-place deploy, push the image to GHCR so the
+      # registry always matches production. Only runs when docker-image-name
+      # looks like a GHCR image (ghcr.io/...).
+
+      - name: Push image to GHCR (in-place sync)
+        if: >-
+          inputs.deploy-strategy == 'in-place' &&
+          steps.health-check.outcome == 'success' &&
+          startsWith(inputs.docker-image-name, 'ghcr.io/')
+        continue-on-error: true
+        run: |
+          IMAGE_NAME="${{ inputs.docker-image-name }}"
+          GHCR_REPO="${IMAGE_NAME%:*}"
+          COMMIT_TAG="${GHCR_REPO}:${{ github.sha }}"
+          LATEST_TAG="${GHCR_REPO}:latest"
+
+          echo "📦 Syncing in-place image to GHCR..."
+          echo "   ${IMAGE_NAME} → ${COMMIT_TAG} + ${LATEST_TAG}"
+
+          GHCR_TOKEN="${{ secrets.GHCR_TOKEN }}"
+          if [ -z "$GHCR_TOKEN" ]; then
+            GHCR_TOKEN="${{ github.token }}"
+          fi
+
+          ssh -i ~/.ssh/id_ed25519 ${{ env.VPS_USER }}@${{ env.VPS_HOST }} bash -s <<GHCR_PUSH
+            # Login to GHCR from VPS
+            echo "${GHCR_TOKEN}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin || {
+              echo "⚠️ GHCR login failed — skipping registry sync"
+              exit 0
+            }
+
+            # Tag with commit SHA for traceability
+            docker tag "${IMAGE_NAME}" "${COMMIT_TAG}" || {
+              echo "⚠️ Could not tag image — skipping registry sync"
+              exit 0
+            }
+            docker tag "${IMAGE_NAME}" "${LATEST_TAG}" || true
+
+            # Push both commit-specific and latest tags
+            docker push "${COMMIT_TAG}" && echo "  ✅ Pushed ${COMMIT_TAG}"
+            docker push "${LATEST_TAG}" && echo "  ✅ Pushed ${LATEST_TAG}"
+
+            # Cleanup: remove the commit-tagged local image to save disk
+            docker rmi "${COMMIT_TAG}" 2>/dev/null || true
+
+            echo "✅ GHCR registry synced with production"
+          GHCR_PUSH
+
       # ──── ROLLBACK ON FAILURE ────
 
       - name: Rollback (in-place)
