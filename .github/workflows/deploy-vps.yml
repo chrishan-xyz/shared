@@ -84,6 +84,10 @@ on:
         description: 'Comma-separated routes to check during smoke test (e.g. /api/health,/api/tasks). If empty, only health-endpoint is checked.'
         default: ''
         type: string
+      smoke-test-json-routes:
+        description: 'Comma-separated API routes that MUST return 200 + JSON content-type (not 401, not HTML). Catches auth middleware bugs.'
+        default: ''
+        type: string
       auto-merge-branches:
         description: 'Comma-separated branch glob patterns to auto-merge to main before deploy (e.g. "hatch/**,navi/**"). Empty = disabled.'
         default: ''
@@ -679,6 +683,66 @@ jobs:
             exit 1
           fi
 
+      # ──── DEEP SMOKE TEST (JSON API ROUTES) ────
+      # Verifies API routes return 200 + JSON content-type after deploy.
+      # This catches auth middleware bugs (401), wrong container serving (HTML),
+      # and port conflicts. These routes MUST return real API responses.
+
+      - name: Deep smoke test (JSON API routes)
+        id: deep-smoke
+        if: inputs.smoke-test-json-routes != '' && steps.health-check.outcome == 'success'
+        run: |
+          PUBLIC_URL="${{ inputs.public-url }}"
+          JSON_ROUTES="${{ inputs.smoke-test-json-routes }}"
+
+          if [ -z "$PUBLIC_URL" ]; then
+            echo "⚠️ No public-url set, skipping deep smoke test"
+            exit 0
+          fi
+
+          echo "🔬 Deep smoke test: verifying API routes return 200 + JSON"
+          echo "   URL: ${PUBLIC_URL}"
+          echo "   Routes: ${JSON_ROUTES}"
+          echo ""
+
+          FAILED=0
+          IFS=',' read -ra ROUTES <<< "$JSON_ROUTES"
+          for ROUTE in "${ROUTES[@]}"; do
+            ROUTE=$(echo "$ROUTE" | xargs)  # trim whitespace
+            FULL_URL="${PUBLIC_URL}${ROUTE}"
+
+            # Get status code AND content-type in one request
+            RESPONSE=$(curl -s -w "\n%{http_code}\n%{content_type}" --connect-timeout 10 --max-time 20 -L "$FULL_URL" 2>/dev/null)
+            BODY=$(echo "$RESPONSE" | sed '$d' | sed '$d')
+            HTTP_CODE=$(echo "$RESPONSE" | tail -2 | head -1)
+            CONTENT_TYPE=$(echo "$RESPONSE" | tail -1)
+
+            # Must be 200
+            if [ "$HTTP_CODE" != "200" ]; then
+              echo "  ❌ ${ROUTE} → HTTP ${HTTP_CODE} (expected 200)"
+              FAILED=$((FAILED + 1))
+              continue
+            fi
+
+            # Must be JSON content-type
+            if echo "$CONTENT_TYPE" | grep -qi "json"; then
+              echo "  ✅ ${ROUTE} → 200 + JSON"
+            else
+              echo "  ❌ ${ROUTE} → 200 but content-type is '${CONTENT_TYPE}' (expected JSON)"
+              echo "     First 200 chars of body: $(echo "$BODY" | head -c 200)"
+              FAILED=$((FAILED + 1))
+            fi
+          done
+
+          echo ""
+          if [ "$FAILED" -gt 0 ]; then
+            echo "❌ Deep smoke test FAILED: $FAILED route(s) broken"
+            echo "   This likely means auth middleware is blocking API routes or wrong container is serving traffic."
+            exit 1
+          else
+            echo "✅ Deep smoke test passed: all API routes return 200 + JSON"
+          fi
+
       # ──── CROSS-SITE SMOKE TEST ────
       # After individual site checks pass, verify ALL sites are still healthy.
       # A deploy to one site can break others (shared Caddyfile, network, etc).
@@ -694,7 +758,7 @@ jobs:
           declare -A SITES=(
             [arlos]="https://arlo.chrishan.xyz/api/health"
             [recharge]="https://recharge.chrishan.xyz/api/health"
-            [feed]="https://feed.chrishan.xyz/api/health"
+            [brain]="https://brain.chrishan.xyz/api/health"
             [home]="https://chrishan.xyz/api/health"
           )
           
