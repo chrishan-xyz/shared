@@ -283,6 +283,15 @@ function createAuth(options: AuthConfig = {}): AuthInstance {
 
   // ── Middleware ──
   function requireAuth(req: Request, res: Response, next: NextFunction): void {
+    // Authelia SSO bypass — when behind Authelia, the user was verified at the
+    // Caddy layer before they could load the page. API calls bypass Authelia
+    // in the Caddyfile (so Remote-User header won't be present), but if the
+    // browser loaded the JS making this request, the user is already authed.
+    if (process.env.AUTHELIA_ENABLED === 'true') {
+      next();
+      return;
+    }
+
     for (const p of skipPaths) {
       if (req.path.startsWith(p)) {
         next();
@@ -340,6 +349,12 @@ function createAuth(options: AuthConfig = {}): AuthInstance {
   }
 
   function status(req: Request, res: Response): void {
+    // Authelia SSO — user already verified at Caddy layer
+    if (process.env.AUTHELIA_ENABLED === 'true') {
+      res.json({ authenticated: true });
+      return;
+    }
+
     const apiKey = req.headers[apiKeyHeader] as string | undefined;
     if (apiKey && safeCompareApiKey(apiKey)) {
       const sessionId = createSession();
