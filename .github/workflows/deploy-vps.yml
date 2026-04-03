@@ -109,6 +109,8 @@ on:
         required: false
       GHCR_TOKEN:
         required: false
+      NTFY_TOKEN:
+        required: false
 
 env:
   VPS_HOST: 204.168.189.154
@@ -882,6 +884,42 @@ jobs:
           else
             echo "ℹ️ ARLOS_API_KEY not set — skipping deploy recording"
           fi
+
+      - name: Notify via ntfy
+        if: always()
+        continue-on-error: true
+        run: |
+          NTFY_KEY="${{ secrets.NTFY_TOKEN }}"
+          if [ -z "$NTFY_KEY" ]; then
+            echo "ℹ️ NTFY_TOKEN not set — skipping notification"
+            exit 0
+          fi
+
+          COMMIT_SHORT=$(echo '${{ github.sha }}' | cut -c1-7)
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          DEPLOY_STATUS="success"
+          if [ "${{ steps.health-check.outcome }}" = "failure" ]; then
+            DEPLOY_STATUS="rolled_back"
+          elif [ "${{ job.status }}" = "failure" ] || [ "${{ job.status }}" = "cancelled" ]; then
+            DEPLOY_STATUS="failed"
+          fi
+
+          if [ "$DEPLOY_STATUS" = "success" ]; then
+            MSG="✅ Deployed ${{ inputs.app-name }} (${COMMIT_SHORT})"
+          elif [ "$DEPLOY_STATUS" = "rolled_back" ]; then
+            MSG="🔴 Deploy failed + rolled back: ${{ inputs.app-name }} (${COMMIT_SHORT})"
+          else
+            MSG="🔴 Deploy failed: ${{ inputs.app-name }} (${COMMIT_SHORT})"
+          fi
+
+          curl -sf -d "${MSG}" \
+            -H "Authorization: Bearer ${NTFY_KEY}" \
+            -H "Title: CI: ${{ inputs.app-name }}" \
+            -H "Tags: $( [ "$DEPLOY_STATUS" = "success" ] && echo "white_check_mark" || echo "rotating_light" )" \
+            -H "Click: ${RUN_URL}" \
+            -H "Priority: $( [ "$DEPLOY_STATUS" = "success" ] && echo "default" || echo "high" )" \
+            "https://ntfy.chrishan.xyz/ci" || echo "⚠️ Failed to send ntfy notification (non-fatal)"
 
       - name: Signal CI failure to Hatch
         if: failure()
