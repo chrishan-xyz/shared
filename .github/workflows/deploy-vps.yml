@@ -385,6 +385,7 @@ jobs:
             # Build image
             docker build --no-cache \
               --build-arg COMMIT_SHA=${{ github.sha }} \
+              --build-arg GIT_SHA=${{ github.sha }} \
               -t ${IMAGE_NAME} ${VPS_DIR##*/}/ || { echo "❌ Docker build failed"; exit 1; }
 
             echo "✅ Image ${IMAGE_NAME} built successfully"
@@ -528,6 +529,7 @@ jobs:
           # Build image locally in CI runner
           docker build --no-cache \
             --build-arg COMMIT_SHA=${{ github.sha }} \
+            --build-arg GIT_SHA=${{ github.sha }} \
             -t "${IMAGE_TAG}" \
             -t "${GHCR_IMAGE}:latest" \
             ${{ inputs.source-subdir }} || { echo "❌ Docker build failed"; exit 1; }
