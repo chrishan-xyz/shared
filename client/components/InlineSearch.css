@@ -27,7 +27,8 @@
 .is-input {
   width: 100%;
   padding: 0 14px 0 40px;
-  height: 40px;
+  height: 44px;
+  min-height: 44px;
   background: var(--bg-surface);
   border: 0.5px solid var(--divider);
   border-radius: 10px;
@@ -52,7 +53,10 @@
   font-weight: 500;
   cursor: pointer;
   font-family: var(--font-system);
-  padding: var(--space-xs) 0;
+  padding: var(--space-sm) var(--space-xs);
+  min-height: 44px;
+  display: flex;
+  align-items: center;
   -webkit-tap-highlight-color: transparent;
   flex-shrink: 0;
 }
