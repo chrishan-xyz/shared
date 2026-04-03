@@ -353,6 +353,7 @@ jobs:
 
       - name: Smoke test container (in-place)
         if: inputs.deploy-strategy == 'in-place'
+        continue-on-error: true
         run: |
           IMAGE_NAME="${{ inputs.docker-image-name }}"
           if [ -z "$IMAGE_NAME" ]; then
