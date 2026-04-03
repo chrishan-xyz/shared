@@ -96,6 +96,10 @@ on:
         description: 'Public URL of the deployed site (e.g. https://arlo.chrishan.xyz). If set, post-deploy verifies the site is reachable through Caddy/TLS, not just the container.'
         default: ''
         type: string
+      strict-typecheck:
+        description: 'When true, tsc --noEmit failures block the build instead of continuing. Only enable after fixing all type errors.'
+        default: false
+        type: boolean
     secrets:
       VPS_SSH_KEY:
         required: true
@@ -139,7 +143,7 @@ jobs:
         run: cd ${{ inputs.npm-workdir }} && npm ci
       - name: Typecheck (server)
         run: cd ${{ inputs.npm-workdir }} && npx tsc --noEmit
-        continue-on-error: true
+        continue-on-error: ${{ inputs.strict-typecheck != true }}
       - name: Typecheck (client)
         if: inputs.build-client
         run: cd ${{ inputs.npm-workdir }}/client && npx tsc --noEmit
