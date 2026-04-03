@@ -447,6 +447,9 @@ jobs:
           ssh -i ~/.ssh/id_ed25519 ${{ env.VPS_USER }}@${{ env.VPS_HOST }} bash -s <<DEPLOY_SCRIPT
             cd ~/caddy || exit 1
 
+            # Rebuild image from updated source (rsync already copied new code)
+            docker compose build --no-cache ${CONTAINER} || { echo "❌ Docker build failed"; exit 1; }
+
             # Restart container via compose
             docker compose up -d --force-recreate ${CONTAINER} || { echo "❌ Docker compose up failed"; exit 1; }
 
