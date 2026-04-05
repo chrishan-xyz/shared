@@ -4,7 +4,7 @@
    Single source of truth for all visual tokens across all apps.
    Each app imports this, then overrides --accent and any theme-specific values.
    
-   Shared across: ArlOS, Feed, Recharge, chrishan.xyz
+   Shared across: ArlOS, Brain, Recharge, chrishan.xyz
    ═══════════════════════════════════════════════════════════════════════════ */
 
 :root {
@@ -40,7 +40,7 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   Dark Theme — used by ArlOS, Feed, chrishan.xyz
+   Dark Theme — Catppuccin Mocha — used by ArlOS, Brain, chrishan.xyz
    Apps using this: @import then add [data-theme="dark"] or set as default.
    ═══════════════════════════════════════════════════════════════════════════ */
 
