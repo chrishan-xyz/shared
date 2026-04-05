@@ -7,9 +7,9 @@
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SOURCE="$SCRIPT_DIR/css/tokens.css"
 
+# ── Build-step apps (direct copy) ──────────────────────────────────────
 TARGETS=(
   "$SCRIPT_DIR/../arlos/client/src/styles/tokens.css"
-  "$SCRIPT_DIR/../feed/client/src/styles/tokens.css"
   "$SCRIPT_DIR/../recharge-2026/client/src/styles/tokens.css"
 )
 
@@ -22,5 +22,18 @@ for target in "${TARGETS[@]}"; do
   fi
 done
 
+# ── chrishan.xyz (no build step — extract token values into style.css) ──
+CHRISHAN_STYLE="$SCRIPT_DIR/../chrishan.xyz/home/style.css"
+if [ -f "$CHRISHAN_STYLE" ]; then
+  echo ""
+  echo "ℹ️  chrishan.xyz uses shared token values directly in home/style.css"
+  echo "   Verify manually: diff shared values against home/style.css :root block"
+  echo "   File: $CHRISHAN_STYLE"
+fi
+
+# ── Brain (uses --ctp-* namespace with shared aliases in index.css) ──
 echo ""
-echo "NOTE: chrishan.xyz has no build step — update home/style.css manually if tokens change."
+echo "ℹ️  Brain uses --ctp-* namespace with shared token aliases in index.css"
+echo "   Brain's aliases map --bg-base → var(--ctp-base) etc."
+echo "   If shared tokens change, verify Brain aliases still match."
+echo "   File: $SCRIPT_DIR/../brain/client/src/index.css"

@@ -91,15 +91,15 @@
   /* ── Text ── */
   --text-primary: #2C2C2C;
   --text-secondary: #6B6B6B;
-  --text-tertiary: #9A9A9A;
+  --text-tertiary: #767676;  /* Was #9A9A9A (2.62:1 on cream) → 3.9:1 on cream — WCAG AA for large text/UI */
 
   /* ── Semantic Colors (warm-friendly) ── */
   --green: #2D8A4E;
-  --green-soft: rgba(45, 138, 78, 0.10);
+  --green-soft: #E3E6D5;
   --yellow: #D4920A;
-  --yellow-soft: rgba(212, 146, 10, 0.10);
+  --yellow-soft: #F4E7CE;
   --red: #C45D3E;
-  --red-soft: rgba(196, 93, 62, 0.10);
+  --red-soft: #F2E1D3;
   --orange: #D4A574;
 
   /* ── Borders & Dividers ── */
@@ -107,7 +107,7 @@
 
   /* ── Default accent (override per app) ── */
   --accent: #C45D3E;
-  --accent-soft: rgba(196, 93, 62, 0.10);
+  --accent-soft: #F2E1D3;
   --text-on-accent: #FFFFFF;
 
   color-scheme: light;
