@@ -13,12 +13,31 @@
   --font-system: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
 
-  /* ── Spacing (4px base unit) ────────────────────────────────────────────*/
-  --space-xs: 4px;
-  --space-sm: 8px;
-  --space-md: 16px;
-  --space-lg: 24px;
-  --space-xl: 32px;
+  /* ── Spacing Scale ──────────────────────────────────────────────────────
+     Numeric scale (--space-1 → --space-12) plus semantic aliases.
+     All values on a 4px base with common intermediaries.
+     Usage: var(--space-4) or var(--space-sm) — both resolve to 8px. */
+  --space-1:  2px;
+  --space-2:  4px;
+  --space-3:  6px;
+  --space-4:  8px;
+  --space-5:  12px;
+  --space-6:  16px;
+  --space-7:  20px;
+  --space-8:  24px;
+  --space-9:  32px;
+  --space-10: 40px;
+  --space-11: 48px;
+  --space-12: 64px;
+
+  /* Semantic aliases (backwards-compatible) */
+  --space-xs: var(--space-2);   /*  4px */
+  --space-sm: var(--space-4);   /*  8px */
+  --space-md: var(--space-6);   /* 16px */
+  --space-lg: var(--space-8);   /* 24px */
+  --space-xl: var(--space-9);   /* 32px */
+  --space-2xl: var(--space-11); /* 48px */
+  --space-3xl: var(--space-12); /* 64px */
 
   /* ── Border Radius ──────────────────────────────────────────────────────*/
   --radius-sm: 8px;
