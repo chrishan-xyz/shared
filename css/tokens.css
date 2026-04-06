@@ -4,14 +4,14 @@
    Single source of truth for all visual tokens across all apps.
    Each app imports this, then overrides --accent and any theme-specific values.
    
-   Shared across: ArlOS, Brain, Recharge, chrishan.xyz
+   Shared across: ArlOS, Feed, Recharge, chrishan.xyz
    ═══════════════════════════════════════════════════════════════════════════ */
 
 :root {
   /* ── Typography ─────────────────────────────────────────────────────────
-     Inter → system fallbacks. Mono for timestamps/IDs only. */
-  --font-system: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
+     Inter Variable → static Inter → system fallbacks. Mono for timestamps/IDs only. */
+  --font-system: 'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'Berkeley Mono', 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
 
   /* ── Spacing Scale ──────────────────────────────────────────────────────
      Numeric scale (--space-1 → --space-12) plus semantic aliases.
@@ -46,10 +46,47 @@
   --radius-lg: 16px;
   --radius-pill: 100px;
 
-  /* ── Motion ─────────────────────────────────────────────────────────────*/
+  /* ── Motion ─────────────────────────────────────────────────────────────
+     Durations: fast for micro-interactions (hover, focus), normal for
+     layout changes (expand/collapse), slow for entrances/page transitions.
+     Easing: ease-out for entrances, ease-in-out for state changes.
+     Spring curves for playful/bouncy animations (modals, toasts). 
+     
+     Respect user preference: wrap animations in @media (prefers-reduced-motion) */
+  --duration-fast:   150ms;
+  --duration-normal: 300ms;
+  --duration-slow:   500ms;
+  --ease-out:        cubic-bezier(0.33, 1, 0.68, 1);
+  --ease-in-out:     cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-out-expo:   cubic-bezier(0.16, 1, 0.3, 1);
   --spring-bounce: linear(0, 0.004, 0.016, 0.035, 0.063, 0.098, 0.141, 0.191, 0.25, 0.316, 0.391, 0.472, 0.562, 0.66, 0.765, 0.878, 1, 0.968, 0.95, 0.942, 0.945, 0.955, 0.972, 0.992, 1, 0.993, 0.99, 0.992, 0.997, 1);
   --spring-gentle: linear(0, 0.11, 0.21, 0.31, 0.41, 0.51, 0.61, 0.71, 0.81, 0.91, 0.96, 0.98, 0.99, 1);
-  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* ── Focus ───────────────────────────────────────────────────────────────
+     WCAG 2.4.7 requires visible focus indicators. We use :focus-visible
+     (keyboard-only) so mouse users aren't bothered by focus rings.
+     Color: Catppuccin Lavender — stands out on both dark and light surfaces. */
+  --focus-ring-color: #b4befe;
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+  --focus-ring: var(--focus-ring-width) solid var(--focus-ring-color);
+  --focus-ring-shadow: 0 0 0 var(--focus-ring-offset) var(--surface-base, #1e1e2e),
+                       0 0 0 calc(var(--focus-ring-offset) + var(--focus-ring-width)) var(--focus-ring-color);
+
+  /* ── Layout Grid ─────────────────────────────────────────────────────────
+     Responsive column grid: 4-col mobile → 8-col tablet → 12-col desktop.
+     Gutter scales with viewport. Container has max-width + auto centering.
+     
+     Usage:
+       CSS:  .grid-layout { ... }  or  display: grid; gap: var(--grid-gutter);
+       TW:   grid grid-cols-4 md:grid-cols-8 lg:grid-cols-12 gap-[var(--grid-gutter)]
+     
+     Always use --grid-gutter for gaps in grid layouts — not --space-* tokens.
+     Spacing tokens are for padding/margin; grid gutter is for column gaps. */
+  --grid-columns: 4;
+  --grid-gutter: 16px;
+  --grid-margin: 16px;       /* page edge padding */
+  --container-max: 1200px;
 
   /* ── Safe Areas (PWA) ───────────────────────────────────────────────────*/
   --sat: env(safe-area-inset-top);
@@ -59,16 +96,24 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   Dark Theme — Catppuccin Mocha — used by ArlOS, Brain, chrishan.xyz
+   Dark Theme — used by ArlOS, Feed, chrishan.xyz
    Apps using this: @import then add [data-theme="dark"] or set as default.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 :root[data-theme="dark"], :root:not([data-theme]) {
-  /* ── Backgrounds (Catppuccin Mocha — warm navy, easy on eyes) ── */
-  --bg-base: #1e1e2e;
-  --bg-surface: #313244;
-  --bg-elevated: #45475a;
-  --bg-hover: #585b70;
+  /* ── 4-Tier Surface Hierarchy (Catppuccin Mocha) ──────────────────────
+     base → raised → overlay → elevated.  Use these for ALL backgrounds.
+     Hardcoding #313244 etc. in components is forbidden — use var(). */
+  --surface-base:     #1e1e2e;   /* page canvas, app shell              */
+  --surface-raised:   #313244;   /* cards, panels, sidebars              */
+  --surface-overlay:  #45475a;   /* dropdowns, tooltips, modals          */
+  --surface-elevated: #585b70;   /* hover states, active highlights      */
+
+  /* ── Legacy aliases (backward-compat — migrate to --surface-*) ── */
+  --bg-base:     var(--surface-base);
+  --bg-surface:  var(--surface-raised);
+  --bg-elevated: var(--surface-overlay);
+  --bg-hover:    var(--surface-elevated);
 
   /* ── Text (all pass WCAG AA 4.5:1 on base AND surface) ── */
   --text-primary: #cdd6f4;    /* 11.3:1 on base */
@@ -85,7 +130,7 @@
   --orange: #fab387;
 
   /* ── Borders & Dividers ── */
-  --divider: #313244;
+  --divider: rgba(255, 255, 255, 0.06);
 
   /* ── Default accent (override per app) ── */
   --accent: #f9e2af;
@@ -101,11 +146,17 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 
 :root[data-theme="light"] {
-  /* ── Backgrounds ── */
-  --bg-base: #FDF6EC;
-  --bg-surface: #F7F0E4;
-  --bg-elevated: #FFFFFF;
-  --bg-hover: #F0E8D8;
+  /* ── 4-Tier Surface Hierarchy (Warm Cream) ── */
+  --surface-base:     #FDF6EC;   /* page canvas                          */
+  --surface-raised:   #F7F0E4;   /* cards, panels                        */
+  --surface-overlay:  #FFFFFF;   /* dropdowns, modals                    */
+  --surface-elevated: #F0E8D8;   /* hover states                         */
+
+  /* ── Legacy aliases ── */
+  --bg-base:     var(--surface-base);
+  --bg-surface:  var(--surface-raised);
+  --bg-elevated: var(--surface-overlay);
+  --bg-hover:    var(--surface-elevated);
 
   /* ── Text ── */
   --text-primary: #2C2C2C;
@@ -130,4 +181,215 @@
   --text-on-accent: #FFFFFF;
 
   color-scheme: light;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Global Focus Styles — WCAG 2.4.7 Focus Visible
+   
+   :focus-visible fires on keyboard navigation only (Tab, arrow keys).
+   Mouse clicks do NOT trigger focus rings — clean UX for pointer users,
+   full accessibility for keyboard users.
+   
+   Uses box-shadow instead of outline for consistent rendering across
+   border-radius values (outline doesn't follow border-radius in Safari).
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Global: all interactive elements get focus-visible rings */
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring-shadow);
+  border-radius: inherit;
+}
+
+/* Inputs/textareas: accent the border instead of adding a ring */
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring-shadow);
+  border-color: var(--focus-ring-color);
+}
+
+/* Remove default :focus (non-visible) outline — let :focus-visible handle it */
+:focus:not(:focus-visible) {
+  outline: none;
+  box-shadow: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Focus Utilities — For components needing explicit focus control
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Explicit focus ring class */
+.focus-ring:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring-shadow);
+}
+
+/* Inset ring for elements with overflow:hidden (e.g., cards) */
+.focus-ring-inset:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 var(--focus-ring-width) var(--focus-ring-color);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Keyframes — Subtle entrance animations
+   Use sparingly: only for elements entering the viewport or state changes.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-down {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Motion Utilities
+   Apply to elements for consistent, subtle animations across all apps.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Entrance animations — apply to cards, list items, panels */
+.animate-fade-in   { animation: fade-in   var(--duration-normal) var(--ease-out) both; }
+.animate-slide-up  { animation: slide-up  var(--duration-normal) var(--ease-out) both; }
+.animate-slide-down{ animation: slide-down var(--duration-normal) var(--ease-out) both; }
+.animate-scale-in  { animation: scale-in  var(--duration-normal) var(--ease-out) both; }
+
+/* Stagger delays for list items — use with .animate-slide-up on children */
+.stagger > :nth-child(1)  { animation-delay: 0ms; }
+.stagger > :nth-child(2)  { animation-delay: 50ms; }
+.stagger > :nth-child(3)  { animation-delay: 100ms; }
+.stagger > :nth-child(4)  { animation-delay: 150ms; }
+.stagger > :nth-child(5)  { animation-delay: 200ms; }
+.stagger > :nth-child(n+6){ animation-delay: 250ms; }
+
+/* Interactive transitions — apply to buttons, links, cards */
+.transition-colors-fast {
+  transition: color var(--duration-fast) var(--ease-out),
+              background-color var(--duration-fast) var(--ease-out),
+              border-color var(--duration-fast) var(--ease-out),
+              box-shadow var(--duration-fast) var(--ease-out);
+}
+
+.transition-transform-fast {
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.transition-all-normal {
+  transition: all var(--duration-normal) var(--ease-out);
+}
+
+/* Hover lift — subtle Y translate for cards */
+.hover-lift {
+  transition: transform var(--duration-fast) var(--ease-out),
+              box-shadow var(--duration-fast) var(--ease-out);
+}
+.hover-lift:hover {
+  transform: translateY(-2px);
+}
+
+/* Press down — tactile feedback for buttons */
+.press-down:active {
+  transform: scale(0.97);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Reduced Motion — Respect user preferences
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Responsive Layout Grid
+   
+   4-col mobile (< 640px) → 8-col tablet (640-1023px) → 12-col desktop (1024+)
+   Gutter: 16px mobile → 24px desktop
+   
+   Classes:
+     .container    — max-width + centered + horizontal padding
+     .grid-layout  — responsive column grid with gutter
+     .col-span-*   — column spanning (1-12)
+     .col-full     — span all columns
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Container — centered content with responsive padding */
+.container {
+  width: 100%;
+  max-width: var(--container-max);
+  margin-inline: auto;
+  padding-inline: var(--grid-margin);
+}
+
+/* Grid layout — auto-responsive columns */
+.grid-layout {
+  display: grid;
+  grid-template-columns: repeat(var(--grid-columns), 1fr);
+  gap: var(--grid-gutter);
+}
+
+/* Column span utilities */
+.col-span-1  { grid-column: span 1; }
+.col-span-2  { grid-column: span 2; }
+.col-span-3  { grid-column: span 3; }
+.col-span-4  { grid-column: span 4; }
+.col-span-6  { grid-column: span 6; }
+.col-span-8  { grid-column: span 8; }
+.col-span-12 { grid-column: span 12; }
+.col-full    { grid-column: 1 / -1; }
+
+/* Auto-fill grid — responsive without breakpoints */
+.grid-auto-fill {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
+  gap: var(--grid-gutter);
+}
+
+/* ── Tablet (640px+): 8 columns, 20px gutter ── */
+@media (min-width: 640px) {
+  :root {
+    --grid-columns: 8;
+    --grid-gutter: 20px;
+    --grid-margin: 24px;
+  }
+  
+  .sm\:col-span-2 { grid-column: span 2; }
+  .sm\:col-span-4 { grid-column: span 4; }
+  .sm\:col-span-6 { grid-column: span 6; }
+  .sm\:col-span-8 { grid-column: span 8; }
+}
+
+/* ── Desktop (1024px+): 12 columns, 24px gutter ── */
+@media (min-width: 1024px) {
+  :root {
+    --grid-columns: 12;
+    --grid-gutter: 24px;
+    --grid-margin: 32px;
+  }
+  
+  .lg\:col-span-3  { grid-column: span 3; }
+  .lg\:col-span-4  { grid-column: span 4; }
+  .lg\:col-span-6  { grid-column: span 6; }
+  .lg\:col-span-8  { grid-column: span 8; }
+  .lg\:col-span-9  { grid-column: span 9; }
+  .lg\:col-span-12 { grid-column: span 12; }
 }
