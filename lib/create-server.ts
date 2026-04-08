@@ -171,13 +171,20 @@ function createServer(opts: ServerConfig): ServerApplication {
 
   app.get('/api/health', (_req: Request, res: Response) => {
     const extra = onHealthCheck ? onHealthCheck() : {};
+    const mem = process.memoryUsage();
     res.json({
       status: 'ok',
       app: appName,
+      sha: _gitSha,
       uptime: Math.floor(process.uptime()),
       version: _pkgVersion,
-      gitSha: _gitSha,
+      node: process.version,
       timestamp: new Date().toISOString(),
+      memory: {
+        rss_mb: Math.round(mem.rss / 1024 / 1024),
+        heap_used_mb: Math.round(mem.heapUsed / 1024 / 1024),
+        heap_total_mb: Math.round(mem.heapTotal / 1024 / 1024),
+      },
       ...extra,
     });
   });
