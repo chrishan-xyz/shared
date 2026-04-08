@@ -1,4 +1,5 @@
 import * as path from 'path';
+import * as os from 'os';
 import { execSync } from 'child_process';
 import { readFileSync } from 'fs';
 import type { Application, Request, Response, NextFunction } from 'express';
@@ -176,14 +177,19 @@ function createServer(opts: ServerConfig): ServerApplication {
       status: 'ok',
       app: appName,
       sha: _gitSha,
-      uptime: Math.floor(process.uptime()),
-      version: _pkgVersion,
-      node: process.version,
+      uptime_seconds: Math.floor(process.uptime()),
+      version: { commit: _gitSha, node: process.version, package: _pkgVersion },
       timestamp: new Date().toISOString(),
       memory: {
         rss_mb: Math.round(mem.rss / 1024 / 1024),
         heap_used_mb: Math.round(mem.heapUsed / 1024 / 1024),
         heap_total_mb: Math.round(mem.heapTotal / 1024 / 1024),
+      },
+      system: {
+        platform: process.platform,
+        cpus: os.cpus().length,
+        load_avg: os.loadavg().map((l: number) => Math.round(l * 100) / 100),
+        free_memory_mb: Math.round(os.freemem() / 1024 / 1024),
       },
       ...extra,
     });
