@@ -15,6 +15,7 @@ SHARED_FILES=(
   "security.js"
   "graceful-shutdown.js"
   "asyncHandler.js"
+  "not-found.js"
 )
 
 echo "════════════════════════════════════════════════════════════"
